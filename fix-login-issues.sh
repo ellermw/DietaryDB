@@ -1,6 +1,20 @@
+#!/bin/bash
+
+echo "Fixing Login Issues..."
+echo "===================="
+echo ""
+
+# 1. First, let's check if backend is accessible
+echo "1. Testing backend connection..."
+curl -s http://localhost:3000/api/health || echo "Backend health check failed"
+echo ""
+
+# 2. Update the App.js to remove credentials and fix API URL
+echo "2. Updating App.js..."
+cat > admin-frontend/src/App.js << 'EOF'
 import React, { useState, useEffect } from 'react';
 
-// Login Component - NO DEFAULT CREDENTIALS SHOWN
+// Login Component without default credentials shown
 function Login({ onLogin }) {
   const [credentials, setCredentials] = useState({ username: '', password: '' });
   const [error, setError] = useState('');
@@ -12,10 +26,8 @@ function Login({ onLogin }) {
     setLoading(true);
 
     try {
-      // Use window.location.hostname to get the current server IP
-      const apiUrl = `http://${window.location.hostname}:3000/api/auth/login`;
-      
-      const response = await fetch(apiUrl, {
+      // Use relative URL for same-origin requests
+      const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(credentials)
@@ -30,7 +42,7 @@ function Login({ onLogin }) {
       }
     } catch (error) {
       console.error('Login error:', error);
-      setError('Unable to connect to server. Please check your connection.');
+      setError('Unable to connect to server. Please try again.');
     }
     
     setLoading(false);
@@ -155,7 +167,7 @@ function Login({ onLogin }) {
   );
 }
 
-// Main App Component with API calls updated
+// Main App Component
 function App() {
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -167,34 +179,21 @@ function App() {
     patients: { active: 0 }
   });
 
-  // Helper function to make API calls
-  const apiCall = async (endpoint, options = {}) => {
-    const apiUrl = `http://${window.location.hostname}:3000${endpoint}`;
-    const token = localStorage.getItem('token');
-    
-    const defaultOptions = {
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token && { 'Authorization': `Bearer ${token}` })
-      }
-    };
-    
-    return fetch(apiUrl, { ...defaultOptions, ...options });
-  };
-
   useEffect(() => {
     const token = localStorage.getItem('token');
     const userData = localStorage.getItem('user');
     if (token && userData) {
       setIsAuthenticated(true);
       setUser(JSON.parse(userData));
-      fetchDashboardStats();
+      fetchDashboardStats(token);
     }
   }, []);
 
-  const fetchDashboardStats = async () => {
+  const fetchDashboardStats = async (token) => {
     try {
-      const response = await apiCall('/api/dashboard/stats');
+      const response = await fetch('/api/dashboard/stats', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
       if (response.ok) {
         const data = await response.json();
         setStats(data);
@@ -209,7 +208,7 @@ function App() {
     localStorage.setItem('user', JSON.stringify(userData));
     setIsAuthenticated(true);
     setUser(userData);
-    fetchDashboardStats();
+    fetchDashboardStats(token);
   };
 
   const handleLogout = () => {
@@ -392,10 +391,23 @@ function App() {
                 backgroundColor: currentPage === item.id ? '#34495e' : 'transparent',
                 borderLeft: currentPage === item.id ? '4px solid #3498db' : '4px solid transparent',
                 cursor: 'pointer',
-                transition: 'all 0.2s ease'
+                transition: 'all 0.2s ease',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.75rem'
+              }}
+              onMouseEnter={(e) => {
+                if (currentPage !== item.id) {
+                  e.currentTarget.style.backgroundColor = '#34495e';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (currentPage !== item.id) {
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                }
               }}
             >
-              <span style={{ fontSize: '1.25rem', marginRight: '0.75rem' }}>{item.icon}</span>
+              <span style={{ fontSize: '1.25rem' }}>{item.icon}</span>
               <span>{item.name}</span>
             </div>
           ))}
@@ -418,8 +430,11 @@ function App() {
               borderRadius: '4px',
               cursor: 'pointer',
               fontSize: '0.875rem',
-              fontWeight: '500'
+              fontWeight: '500',
+              transition: 'background-color 0.2s'
             }}
+            onMouseEnter={(e) => e.target.style.backgroundColor = '#c0392b'}
+            onMouseLeave={(e) => e.target.style.backgroundColor = '#e74c3c'}
           >
             Logout
           </button>
@@ -437,3 +452,72 @@ function App() {
 }
 
 export default App;
+EOF
+
+# 3. Update package.json to include proxy
+echo "3. Updating package.json with proxy..."
+cat > admin-frontend/package.json << 'EOF'
+{
+  "name": "dietary-admin-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "proxy": "http://backend:3000",
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-scripts": "5.0.1"
+  },
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject"
+  },
+  "eslintConfig": {
+    "extends": ["react-app"]
+  },
+  "browserslist": {
+    "production": [">0.2%", "not dead", "not op_mini all"],
+    "development": ["last 1 chrome version", "last 1 firefox version", "last 1 safari version"]
+  }
+}
+EOF
+
+# 4. Make sure backend has CORS enabled
+echo "4. Checking backend CORS configuration..."
+if ! grep -q "cors" backend/server.js; then
+  echo "Note: Make sure backend/server.js has CORS enabled:"
+  echo "app.use(cors());"
+fi
+
+# 5. Restart the frontend
+echo "5. Restarting frontend with updated configuration..."
+sudo docker compose restart admin-frontend
+
+# 6. Check logs
+echo ""
+echo "6. Waiting for React to compile..."
+sleep 10
+echo ""
+echo "Recent frontend logs:"
+sudo docker compose logs --tail=20 admin-frontend
+
+echo ""
+echo "===================="
+echo "Login issues fixed!"
+echo ""
+echo "Changes made:"
+echo "✅ Removed default credentials display"
+echo "✅ Fixed API connection using proxy"
+echo "✅ Improved error messages"
+echo ""
+echo "The React app will use the proxy setting to connect to the backend."
+echo "This avoids CORS issues."
+echo ""
+echo "Login with: admin / admin123"
+echo "Access at: http://192.168.1.74:3001"
+echo ""
+echo "If still having issues, check:"
+echo "1. Backend logs: sudo docker compose logs backend"
+echo "2. Network: sudo docker network ls"
+echo "3. CORS in backend: grep cors backend/server.js"

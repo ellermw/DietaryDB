@@ -4,7 +4,7 @@ services:
     container_name: dietary_postgres
     environment:
       POSTGRES_USER: dietary_user
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-DietarySecurePass2024!}
+      POSTGRES_PASSWORD: DietarySecurePass2024!
       POSTGRES_DB: dietary_db
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -30,8 +30,8 @@ services:
       DB_PORT: 5432
       DB_NAME: dietary_db
       DB_USER: dietary_user
-      DB_PASSWORD: ${DB_PASSWORD:-DietarySecurePass2024!}
-      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-this}
+      DB_PASSWORD: DietarySecurePass2024!
+      JWT_SECRET: your-super-secret-jwt-key-change-this
       NODE_ENV: production
       PORT: 3000
     volumes:

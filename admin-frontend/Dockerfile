@@ -1,11 +1,18 @@
-FROM node:18-alpine as builder
-WORKDIR /app
-COPY package*.json ./
-RUN npm install
-COPY . .
-RUN npm run build
+FROM node:18-alpine
 
-FROM nginx:alpine
-COPY --from=builder /app/build /usr/share/nginx/html
-EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm install
+
+# Copy all source files
+COPY . .
+
+# Expose port 3000 (React dev server)
+EXPOSE 3000
+
+# Start React development server
+CMD ["npm", "start"]

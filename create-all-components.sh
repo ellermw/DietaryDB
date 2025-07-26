@@ -1,6 +1,79 @@
+#!/bin/bash
+
+echo "Creating All React Admin Components..."
+echo "====================================="
+echo ""
+
+# Create directories
+mkdir -p admin-frontend/src/pages
+mkdir -p admin-frontend/public
+
+# 1. Create index.js
+echo "Creating src/index.js..."
+cat > admin-frontend/src/index.js << 'EOF'
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App';
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+EOF
+
+# 2. Create public/index.html
+echo "Creating public/index.html..."
+cat > admin-frontend/public/index.html << 'EOF'
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dietary Admin Dashboard</title>
+</head>
+<body>
+  <noscript>You need to enable JavaScript to run this application.</noscript>
+  <div id="root"></div>
+</body>
+</html>
+EOF
+
+# 3. Create package.json
+echo "Creating package.json..."
+cat > admin-frontend/package.json << 'EOF'
+{
+  "name": "dietary-admin-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-scripts": "5.0.1"
+  },
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject"
+  },
+  "eslintConfig": {
+    "extends": ["react-app"]
+  },
+  "browserslist": {
+    "production": [">0.2%", "not dead", "not op_mini all"],
+    "development": ["last 1 chrome version", "last 1 firefox version", "last 1 safari version"]
+  }
+}
+EOF
+
+# 4. Create simplified App.js that doesn't require separate files
+echo "Creating src/App.js with all components inline..."
+cat > admin-frontend/src/App.js << 'EOF'
 import React, { useState, useEffect } from 'react';
 
-// Login Component - NO DEFAULT CREDENTIALS SHOWN
+// Inline Login Component
 function Login({ onLogin }) {
   const [credentials, setCredentials] = useState({ username: '', password: '' });
   const [error, setError] = useState('');
@@ -12,10 +85,7 @@ function Login({ onLogin }) {
     setLoading(true);
 
     try {
-      // Use window.location.hostname to get the current server IP
-      const apiUrl = `http://${window.location.hostname}:3000/api/auth/login`;
-      
-      const response = await fetch(apiUrl, {
+      const response = await fetch('http://localhost:3000/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(credentials)
@@ -26,11 +96,10 @@ function Login({ onLogin }) {
       if (response.ok) {
         onLogin(data.token, data.user);
       } else {
-        setError(data.error || 'Invalid username or password');
+        setError(data.error || 'Login failed');
       }
     } catch (error) {
-      console.error('Login error:', error);
-      setError('Unable to connect to server. Please check your connection.');
+      setError('Connection error. Please check if the server is running.');
     }
     
     setLoading(false);
@@ -49,8 +118,7 @@ function Login({ onLogin }) {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: '#f5f5f5',
-      backgroundImage: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+      backgroundColor: '#f5f5f5'
     }}>
       <div style={{
         backgroundColor: 'white',
@@ -60,73 +128,47 @@ function Login({ onLogin }) {
         width: '90%',
         maxWidth: '400px'
       }}>
-        <h1 style={{ textAlign: 'center', marginBottom: '0.5rem', color: '#2c3e50' }}>
-          Dietary Admin
-        </h1>
-        <p style={{ textAlign: 'center', marginBottom: '2rem', color: '#7f8c8d' }}>
-          Sign in to access the admin panel
-        </p>
+        <h1 style={{ textAlign: 'center', marginBottom: '2rem' }}>Dietary Admin</h1>
         <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: '1.5rem' }}>
-            <label style={{ 
-              display: 'block', 
-              marginBottom: '0.5rem',
-              fontWeight: '500',
-              color: '#2c3e50'
-            }}>
-              Username
-            </label>
+          <div style={{ marginBottom: '1rem' }}>
+            <label style={{ display: 'block', marginBottom: '0.5rem' }}>Username</label>
             <input
               type="text"
               name="username"
               value={credentials.username}
               onChange={handleChange}
               required
-              autoFocus
-              placeholder="Enter your username"
               style={{
                 width: '100%',
-                padding: '0.75rem',
+                padding: '0.5rem',
                 border: '1px solid #ddd',
-                borderRadius: '4px',
-                fontSize: '1rem'
+                borderRadius: '4px'
               }}
             />
           </div>
-          <div style={{ marginBottom: '1.5rem' }}>
-            <label style={{ 
-              display: 'block', 
-              marginBottom: '0.5rem',
-              fontWeight: '500',
-              color: '#2c3e50'
-            }}>
-              Password
-            </label>
+          <div style={{ marginBottom: '1rem' }}>
+            <label style={{ display: 'block', marginBottom: '0.5rem' }}>Password</label>
             <input
               type="password"
               name="password"
               value={credentials.password}
               onChange={handleChange}
               required
-              placeholder="Enter your password"
               style={{
                 width: '100%',
-                padding: '0.75rem',
+                padding: '0.5rem',
                 border: '1px solid #ddd',
-                borderRadius: '4px',
-                fontSize: '1rem'
+                borderRadius: '4px'
               }}
             />
           </div>
           {error && (
             <div style={{
               backgroundColor: '#fee',
-              border: '1px solid #fcc',
               color: '#c00',
-              padding: '0.75rem',
+              padding: '0.5rem',
               marginBottom: '1rem',
-              borderRadius: '4px',
-              fontSize: '0.875rem'
+              borderRadius: '4px'
             }}>
               {error}
             </div>
@@ -137,50 +179,37 @@ function Login({ onLogin }) {
             style={{
               width: '100%',
               padding: '0.75rem',
-              backgroundColor: loading ? '#95a5a6' : '#3498db',
+              backgroundColor: loading ? '#ccc' : '#007bff',
               color: 'white',
               border: 'none',
               borderRadius: '4px',
-              fontSize: '1rem',
-              fontWeight: '500',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              transition: 'background-color 0.2s'
+              cursor: loading ? 'not-allowed' : 'pointer'
             }}
           >
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
+        <div style={{
+          marginTop: '2rem',
+          padding: '1rem',
+          backgroundColor: '#f8f9fa',
+          borderRadius: '4px',
+          fontSize: '0.875rem',
+          textAlign: 'center'
+        }}>
+          <p>Default credentials:</p>
+          <code>admin / admin123</code>
+        </div>
       </div>
     </div>
   );
 }
 
-// Main App Component with API calls updated
+// Main App Component
 function App() {
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState(null);
-  const [stats, setStats] = useState({
-    users: { total: 0, active: 0 },
-    items: { total: 0, active: 0 },
-    orders: { today: 0 },
-    patients: { active: 0 }
-  });
-
-  // Helper function to make API calls
-  const apiCall = async (endpoint, options = {}) => {
-    const apiUrl = `http://${window.location.hostname}:3000${endpoint}`;
-    const token = localStorage.getItem('token');
-    
-    const defaultOptions = {
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token && { 'Authorization': `Bearer ${token}` })
-      }
-    };
-    
-    return fetch(apiUrl, { ...defaultOptions, ...options });
-  };
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -188,28 +217,14 @@ function App() {
     if (token && userData) {
       setIsAuthenticated(true);
       setUser(JSON.parse(userData));
-      fetchDashboardStats();
     }
   }, []);
-
-  const fetchDashboardStats = async () => {
-    try {
-      const response = await apiCall('/api/dashboard/stats');
-      if (response.ok) {
-        const data = await response.json();
-        setStats(data);
-      }
-    } catch (error) {
-      console.error('Error fetching stats:', error);
-    }
-  };
 
   const handleLogin = (token, userData) => {
     localStorage.setItem('token', token);
     localStorage.setItem('user', JSON.stringify(userData));
     setIsAuthenticated(true);
     setUser(userData);
-    fetchDashboardStats();
   };
 
   const handleLogout = () => {
@@ -217,7 +232,6 @@ function App() {
     localStorage.removeItem('user');
     setIsAuthenticated(false);
     setUser(null);
-    setCurrentPage('dashboard');
   };
 
   if (!isAuthenticated) {
@@ -249,55 +263,37 @@ function App() {
                 padding: '1.5rem',
                 backgroundColor: '#e3f2fd',
                 borderRadius: '8px',
-                textAlign: 'center',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                textAlign: 'center'
               }}>
                 <h3>Total Users</h3>
-                <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: '0.5rem 0' }}>
-                  {stats.users?.total || 0}
-                </p>
-                <p style={{ fontSize: '0.875rem', color: '#666' }}>
-                  {stats.users?.active || 0} active
-                </p>
+                <p style={{ fontSize: '2rem', fontWeight: 'bold' }}>0</p>
               </div>
               <div style={{
                 padding: '1.5rem',
                 backgroundColor: '#e8f5e9',
                 borderRadius: '8px',
-                textAlign: 'center',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                textAlign: 'center'
               }}>
                 <h3>Food Items</h3>
-                <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: '0.5rem 0' }}>
-                  {stats.items?.total || 0}
-                </p>
-                <p style={{ fontSize: '0.875rem', color: '#666' }}>
-                  {stats.items?.active || 0} active
-                </p>
+                <p style={{ fontSize: '2rem', fontWeight: 'bold' }}>0</p>
               </div>
               <div style={{
                 padding: '1.5rem',
                 backgroundColor: '#fff3e0',
                 borderRadius: '8px',
-                textAlign: 'center',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                textAlign: 'center'
               }}>
                 <h3>Today's Orders</h3>
-                <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: '0.5rem 0' }}>
-                  {stats.orders?.today || 0}
-                </p>
+                <p style={{ fontSize: '2rem', fontWeight: 'bold' }}>0</p>
               </div>
               <div style={{
                 padding: '1.5rem',
                 backgroundColor: '#fce4ec',
                 borderRadius: '8px',
-                textAlign: 'center',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                textAlign: 'center'
               }}>
                 <h3>Active Patients</h3>
-                <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: '0.5rem 0' }}>
-                  {stats.patients?.active || 0}
-                </p>
+                <p style={{ fontSize: '2rem', fontWeight: 'bold' }}>0</p>
               </div>
             </div>
           </div>
@@ -369,56 +365,47 @@ function App() {
   };
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#f5f5f5' }}>
+    <div style={{ display: 'flex', minHeight: '100vh' }}>
       <div style={{
         width: '250px',
-        backgroundColor: '#2c3e50',
+        backgroundColor: '#343a40',
         color: 'white',
-        padding: '0'
+        padding: '1rem'
       }}>
-        <div style={{ padding: '1.5rem', borderBottom: '1px solid #34495e' }}>
-          <h2 style={{ margin: 0, fontSize: '1.5rem' }}>Dietary Admin</h2>
-          <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.875rem', opacity: 0.8 }}>
-            Welcome, {user?.fullName || user?.username}
-          </p>
-        </div>
-        <nav style={{ padding: '1rem 0' }}>
+        <h2 style={{ marginBottom: '2rem' }}>Dietary Admin</h2>
+        <nav>
           {navigation.map(item => (
             <div
               key={item.id}
               onClick={() => setCurrentPage(item.id)}
               style={{
-                padding: '0.75rem 1.5rem',
-                backgroundColor: currentPage === item.id ? '#34495e' : 'transparent',
-                borderLeft: currentPage === item.id ? '4px solid #3498db' : '4px solid transparent',
-                cursor: 'pointer',
-                transition: 'all 0.2s ease'
+                padding: '0.75rem',
+                marginBottom: '0.5rem',
+                backgroundColor: currentPage === item.id ? '#495057' : 'transparent',
+                borderRadius: '4px',
+                cursor: 'pointer'
               }}
             >
-              <span style={{ fontSize: '1.25rem', marginRight: '0.75rem' }}>{item.icon}</span>
-              <span>{item.name}</span>
+              {item.icon} {item.name}
             </div>
           ))}
         </nav>
         <div style={{
           position: 'absolute',
-          bottom: '0',
-          width: '100%',
-          padding: '1rem 1.5rem',
-          borderTop: '1px solid #34495e'
+          bottom: '1rem',
+          left: '1rem',
+          right: '1rem'
         }}>
           <button
             onClick={handleLogout}
             style={{
               width: '100%',
               padding: '0.75rem',
-              backgroundColor: '#e74c3c',
+              backgroundColor: '#dc3545',
               color: 'white',
               border: 'none',
               borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '0.875rem',
-              fontWeight: '500'
+              cursor: 'pointer'
             }}
           >
             Logout
@@ -428,7 +415,7 @@ function App() {
       <div style={{
         flex: 1,
         padding: '2rem',
-        overflow: 'auto'
+        backgroundColor: '#f8f9fa'
       }}>
         {renderPage()}
       </div>
@@ -437,3 +424,12 @@ function App() {
 }
 
 export default App;
+EOF
+
+echo ""
+echo "All React components created!"
+echo ""
+echo "Now running setup script..."
+
+# Run the setup script
+bash setup-full-admin.sh

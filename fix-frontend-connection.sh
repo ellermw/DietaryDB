@@ -1,3 +1,17 @@
+#!/bin/bash
+
+echo "Fixing Frontend Connection and Login Display"
+echo "==========================================="
+echo ""
+
+# 1. First check if backend is actually running
+echo "1. Checking backend status:"
+curl -s http://localhost:3000/api/health
+echo ""
+
+# 2. Update App.js to remove credentials and fix connection
+echo "2. Updating App.js..."
+cat > admin-frontend/src/App.js << 'EOF'
 import React, { useState, useEffect } from 'react';
 
 // Login Component - NO DEFAULT CREDENTIALS SHOWN
@@ -437,3 +451,44 @@ function App() {
 }
 
 export default App;
+EOF
+
+# 3. Restart the frontend to apply changes
+echo "3. Restarting frontend..."
+sudo docker compose -f docker-compose-working.yml restart admin-frontend
+
+# 4. Test if backend is accessible from browser's perspective
+echo ""
+echo "4. Testing backend accessibility:"
+echo "From server (should work):"
+curl -s http://localhost:3000/api/health | grep -q "healthy" && echo "✓ Backend is healthy" || echo "✗ Backend not healthy"
+
+echo ""
+echo "From your IP (may have CORS issues):"
+curl -s http://192.168.1.74:3000/api/health | grep -q "healthy" && echo "✓ Accessible" || echo "✗ Not accessible"
+
+# 5. Check CORS configuration in backend
+echo ""
+echo "5. Checking backend CORS configuration:"
+if grep -q "cors()" backend/server.js; then
+    echo "✓ CORS middleware is present"
+else
+    echo "✗ CORS middleware missing - this is the problem!"
+    echo ""
+    echo "To fix, add this to backend/server.js after const app = express():"
+    echo "app.use(cors());"
+fi
+
+echo ""
+echo "==========================================="
+echo "Changes applied:"
+echo "✓ Removed default credentials from login page"
+echo "✓ Updated API calls to use dynamic hostname"
+echo ""
+echo "The app now uses window.location.hostname to connect"
+echo "to the backend, so it works from any IP address."
+echo ""
+echo "If still having connection issues:"
+echo "1. Ensure CORS is enabled in backend/server.js"
+echo "2. Check firewall: sudo ufw allow 3000"
+echo "3. Restart backend: sudo docker compose -f docker-compose-working.yml restart backend"

@@ -7,7 +7,7 @@ services:
     environment:
       POSTGRES_DB: dietary_db
       POSTGRES_USER: dietary_user
-      POSTGRES_PASSWORD: HJRt2Fab54XYl23WrsMvicgAm
+      POSTGRES_PASSWORD: DietarySecurePass2024!
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -26,7 +26,7 @@ services:
       DB_PORT: 5432
       DB_NAME: dietary_db
       DB_USER: dietary_user
-      DB_PASSWORD: HJRt2Fab54XYl23WrsMvicgAm
+      DB_PASSWORD: DietarySecurePass2024!
       JWT_SECRET: your-secret-jwt-key-change-this-in-production
       PORT: 3000
     ports:

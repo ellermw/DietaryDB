@@ -1,60 +1,69 @@
 import React from 'react';
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { Link, Outlet, useLocation, Navigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 
 function Layout() {
-  const navigate = useNavigate();
-  
-  const handleLogout = () => {
-    localStorage.removeItem('authToken');
-    navigate('/login');
-  };
+  const { user, logout, loading } = useAuth();
+  const location = useLocation();
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
 
   const navigation = [
     { name: 'Dashboard', href: '/' },
-    { name: 'Patients', href: '/patients' },
-    { name: 'Items', href: '/items' },
-    { name: 'Orders', href: '/orders' },
-    { name: 'Menus', href: '/menus' },
+    { name: 'Items / Categories', href: '/items' },
     { name: 'Users', href: '/users' },
-    { name: 'Backup', href: '/backup' },
-    { name: 'Audit', href: '/audit' },
+    { name: 'Backup / Restore', href: '/backup' },
+    { name: 'Audit Logs', href: '/audit' },
   ];
 
   return (
-    <div className="flex h-screen bg-gray-100">
-      <div className="w-64 bg-white shadow-md">
-        <div className="p-4">
-          <h2 className="text-xl font-bold">Dietary Admin</h2>
-        </div>
-        <nav className="mt-4">
-          {navigation.map((item) => (
-            <NavLink
-              key={item.name}
-              to={item.href}
-              className={({ isActive }) =>
-                `block px-4 py-2 text-sm ${
-                  isActive ? 'bg-blue-500 text-white' : 'text-gray-700 hover:bg-gray-200'
-                }`
-              }
-            >
-              {item.name}
-            </NavLink>
-          ))}
-        </nav>
-        <div className="absolute bottom-0 w-64 p-4">
-          <button
-            onClick={handleLogout}
-            className="w-full bg-red-500 text-white py-2 rounded hover:bg-red-600"
-          >
-            Logout
-          </button>
+    <div className="min-h-screen bg-gray-100">
+      <div className="bg-gray-900">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            <div className="flex items-center">
+              <h1 className="text-white text-xl font-semibold">Dietary Admin</h1>
+              <nav className="ml-10 flex items-baseline space-x-4">
+                {navigation.map((item) => (
+                  <Link
+                    key={item.name}
+                    to={item.href}
+                    className={`px-3 py-2 rounded-md text-sm font-medium ${
+                      location.pathname === item.href
+                        ? 'bg-gray-800 text-white'
+                        : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                    }`}
+                  >
+                    {item.name}
+                  </Link>
+                ))}
+              </nav>
+            </div>
+            <div className="flex items-center">
+              <span className="text-gray-300 mr-4">{user.full_name}</span>
+              <button
+                onClick={logout}
+                className="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium"
+              >
+                Logout
+              </button>
+            </div>
+          </div>
         </div>
       </div>
-      <div className="flex-1 overflow-auto">
-        <main className="p-6">
-          <Outlet />
-        </main>
-      </div>
+      <main>
+        <Outlet />
+      </main>
     </div>
   );
 }

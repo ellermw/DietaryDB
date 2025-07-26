@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: dietary_postgres
+    environment:
+      POSTGRES_DB: dietary_db
+      POSTGRES_USER: dietary_user
+      POSTGRES_PASSWORD: HJRt2Fab54XYl23WrsMvicgAm
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - dietary_network
+    restart: unless-stopped
+
+  api:
+    build: ./backend
+    container_name: dietary_api
+    environment:
+      NODE_ENV: production
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: dietary_db
+      DB_USER: dietary_user
+      DB_PASSWORD: HJRt2Fab54XYl23WrsMvicgAm
+      JWT_SECRET: your-secret-jwt-key-change-this-in-production
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - postgres
+    networks:
+      - dietary_network
+    restart: unless-stopped
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+
+  admin:
+    build: ./admin-frontend
+    container_name: dietary_admin
+    environment:
+      REACT_APP_API_URL: http://localhost:3000/api
+    ports:
+      - "3001:80"
+    depends_on:
+      - api
+    networks:
+      - dietary_network
+    restart: unless-stopped
+
+networks:
+  dietary_network:
+    driver: bridge
+
+volumes:
+  postgres_data:

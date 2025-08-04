@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dietary Admin Dashboard</title>
+    <meta charset="utf-8">
+    <style>
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; 
+            margin: 0; 
+            padding: 0; 
+            background: #f0f2f5; 
+        }
+        .header {
+            background: white;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .container { 
+            max-width: 1200px; 
+            margin: 20px auto;
+            padding: 0 20px;
+        }
+        h1 { 
+            margin: 0;
+            color: #1a1a1a; 
+            font-size: 24px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .card { 
+            background: white; 
+            padding: 24px; 
+            border-radius: 12px; 
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            text-align: center;
+        }
+        .card h3 {
+            margin: 0 0 10px 0;
+            color: #555;
+            font-size: 14px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .card .number {
+            font-size: 36px;
+            font-weight: 600;
+            margin: 10px 0;
+        }
+        .card.blue { border-top: 3px solid #007bff; }
+        .card.blue .number { color: #007bff; }
+        .card.green { border-top: 3px solid #28a745; }
+        .card.green .number { color: #28a745; }
+        .card.orange { border-top: 3px solid #fd7e14; }
+        .card.orange .number { color: #fd7e14; }
+        .card.red { border-top: 3px solid #dc3545; }
+        .card.red .number { color: #dc3545; }
+        button { 
+            padding: 10px 20px; 
+            background: #dc3545; 
+            color: white; 
+            border: none; 
+            border-radius: 6px; 
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        button:hover {
+            background: #c82333;
+        }
+        .user-info {
+            color: #666;
+            font-size: 14px;
+        }
+        .actions {
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            margin: 20px 0;
+        }
+        .actions h2 {
+            margin: 0 0 20px 0;
+            font-size: 18px;
+        }
+        .action-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+        }
+        .action-btn {
+            padding: 15px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 500;
+            text-align: center;
+            transition: background 0.2s;
+        }
+        .action-btn:hover {
+            background: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1>🏥 Dietary Management System</h1>
+            <div class="user-info" id="userInfo">Loading...</div>
+        </div>
+        <button onclick="logout()">Logout</button>
+    </div>
+    
+    <div class="container">
+        <div class="grid">
+            <div class="card blue">
+                <h3>Active Users</h3>
+                <div class="number" id="userCount">-</div>
+            </div>
+            <div class="card green">
+                <h3>Active Patients</h3>
+                <div class="number" id="patientCount">-</div>
+            </div>
+            <div class="card orange">
+                <h3>Food Items</h3>
+                <div class="number" id="itemCount">-</div>
+            </div>
+            <div class="card red">
+                <h3>Today's Orders</h3>
+                <div class="number" id="orderCount">-</div>
+            </div>
+        </div>
+        
+        <div class="actions">
+            <h2>Quick Actions</h2>
+            <div class="action-grid">
+                <button class="action-btn" onclick="alert('Patients management coming soon!')">Manage Patients</button>
+                <button class="action-btn" onclick="alert('Items management coming soon!')">Manage Items</button>
+                <button class="action-btn" onclick="alert('Orders management coming soon!')">View Orders</button>
+                <button class="action-btn" onclick="alert('Users management coming soon!')">Manage Users</button>
+            </div>
+        </div>
+        
+        <div class="actions">
+            <h2>API Information</h2>
+            <p>Backend API is running at: <code id="apiUrl"></code></p>
+            <p>Status: <span id="apiStatus">Checking...</span></p>
+        </div>
+    </div>
+    
+    <script>
+        // Check authentication
+        if (!localStorage.getItem('token')) {
+            window.location.href = 'index.html';
+        }
+        
+        const API_URL = window.location.protocol + '//' + window.location.hostname + ':3000';
+        document.getElementById('apiUrl').textContent = API_URL;
+        
+        // Display user info
+        const user = JSON.parse(localStorage.getItem('user') || '{}');
+        document.getElementById('userInfo').textContent = `Logged in as: ${user.full_name || user.username} (${user.role})`;
+        
+        // Fetch system info
+        async function fetchSystemInfo() {
+            try {
+                const response = await fetch(API_URL + '/api/system/info', {
+                    headers: {
+                        'Authorization': 'Bearer ' + localStorage.getItem('token')
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById('apiStatus').innerHTML = '<span style="color: green;">✓ Online</span>';
+                    
+                    if (data.statistics) {
+                        document.getElementById('userCount').textContent = data.statistics.active_users || '0';
+                        document.getElementById('patientCount').textContent = data.statistics.active_patients || '0';
+                        document.getElementById('itemCount').textContent = data.statistics.active_items || '0';
+                        document.getElementById('orderCount').textContent = data.statistics.today_orders || '0';
+                    }
+                } else {
+                    document.getElementById('apiStatus').innerHTML = '<span style="color: red;">✗ Error</span>';
+                }
+            } catch (error) {
+                document.getElementById('apiStatus').innerHTML = '<span style="color: red;">✗ Offline</span>';
+                console.error('Error:', error);
+            }
+        }
+        
+        // Fetch info on load
+        fetchSystemInfo();
+        setInterval(fetchSystemInfo, 30000);
+        
+        function logout() {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            window.location.href = 'index.html';
+        }
+    </script>
+</body>
+</html>

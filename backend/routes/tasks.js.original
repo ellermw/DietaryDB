@@ -1,0 +1,152 @@
+const express = require('express');
+const db = require('../config/database');
+const { authenticateToken, authorizeRole } = require('../middleware/auth');
+const { exec } = require('child_process');
+const path = require('path');
+const fs = require('fs').promises;
+
+const router = express.Router();
+
+// Get database statistics
+router.get('/database/stats', [
+  authenticateToken,
+  authorizeRole('Admin')
+], async (req, res) => {
+  try {
+    const stats = await db.query(`
+      SELECT 
+        pg_database_size(current_database()) as database_size,
+        (SELECT COUNT(*) FROM users) as total_users,
+        (SELECT COUNT(*) FROM patient_info) as total_patients,
+        (SELECT COUNT(*) FROM meal_orders) as total_orders,
+        (SELECT COUNT(*) FROM backup_history WHERE status = 'completed') as total_backups,
+        (SELECT MAX(created_date) FROM backup_history WHERE status = 'completed') as last_backup
+    `);
+    
+    res.json(stats.rows[0]);
+  } catch (error) {
+    console.error('Error fetching database stats:', error);
+    res.status(500).json({ message: 'Error fetching database statistics' });
+  }
+});
+
+// Run database maintenance
+router.post('/database/maintenance', [
+  authenticateToken,
+  authorizeRole('Admin')
+], async (req, res) => {
+  try {
+    await db.query('VACUUM ANALYZE');
+    res.json({ 
+      message: 'Database maintenance completed successfully',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error running maintenance:', error);
+    res.status(500).json({ message: 'Error running database maintenance' });
+  }
+});
+
+// Manual backup
+router.post('/backup/manual', [
+  authenticateToken,
+  authorizeRole('Admin')
+], async (req, res) => {
+  try {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const backupName = `dietary_db_backup_${timestamp}.sql`;
+    const backupPath = `/opt/dietarydb/backups/${backupName}`;
+    
+    // Ensure backup directory exists
+    await fs.mkdir('/opt/dietarydb/backups', { recursive: true });
+    
+    // Create backup
+    const pgDumpCommand = `PGPASSWORD="${process.env.DB_PASSWORD}" pg_dump -h ${process.env.DB_HOST} -p ${process.env.DB_PORT} -U ${process.env.DB_USER} -d ${process.env.DB_NAME} -f ${backupPath}`;
+    
+    exec(pgDumpCommand, async (error, stdout, stderr) => {
+      if (error) {
+        console.error('Backup error:', error);
+        res.status(500).json({ message: 'Error creating backup', error: error.message });
+      } else {
+        const stats = await fs.stat(backupPath);
+        res.json({ 
+          message: 'Backup completed successfully',
+          backupName,
+          size: stats.size
+        });
+      }
+    });
+  } catch (error) {
+    console.error('Error creating backup:', error);
+    res.status(500).json({ message: 'Error creating backup' });
+  }
+});
+
+// Get backup history
+router.get('/backup/history', [
+  authenticateToken,
+  authorizeRole('Admin')
+], async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT * FROM backup_history ORDER BY created_date DESC LIMIT 50`
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching backup history:', error);
+    res.json([]); // Return empty array instead of error
+  }
+});
+
+// Get backup schedules
+router.get('/backup/schedules', [
+  authenticateToken,
+  authorizeRole('Admin')
+], async (req, res) => {
+  try {
+    const result = await db.query(
+      'SELECT * FROM backup_schedules ORDER BY created_date DESC'
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching schedules:', error);
+    res.json([]); // Return empty array instead of error
+  }
+});
+
+// Create backup schedule
+router.post('/backup/schedule', [
+  authenticateToken,
+  authorizeRole('Admin')
+], async (req, res) => {
+  try {
+    const { schedule_name, schedule_type, schedule_time, retention_days } = req.body;
+    
+    const result = await db.query(
+      `INSERT INTO backup_schedules 
+       (schedule_name, schedule_type, schedule_time, retention_days) 
+       VALUES ($1, $2, $3, $4) 
+       RETURNING *`,
+      [schedule_name, schedule_type, schedule_time, retention_days || 30]
+    );
+    
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error('Error creating schedule:', error);
+    res.status(500).json({ message: 'Error creating backup schedule' });
+  }
+});
+
+// Placeholder for restore
+router.post('/backup/restore', [
+  authenticateToken,
+  authorizeRole('Admin')
+], async (req, res) => {
+  res.status(501).json({ message: 'Restore functionality not implemented yet' });
+});
+
+// Export initialization function
+module.exports = router;
+module.exports.initializeScheduledBackups = async () => {
+  console.log('Scheduled backups initialization placeholder');
+};

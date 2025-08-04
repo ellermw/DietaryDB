@@ -5,46 +5,51 @@ import { useAuth } from '../contexts/AuthContext';
 const Items = () => {
   const { currentUser } = useAuth();
   const [items, setItems] = useState([]);
+  const [categories, setCategoriesWithCounts] = useState([]);
+  const [categoryList, setCategoryList] = useState([]);
   const [filteredItems, setFilteredItems] = useState([]);
-  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All Categories');
   const [showForm, setShowForm] = useState(false);
+  const [showCategoryManager, setShowCategoryManager] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
+  const [newCategoryName, setNewCategoryName] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     category: '',
-    description: '',
     is_ada_friendly: false,
     fluid_ml: '',
-    carbs_g: '',
     sodium_mg: '',
+    carbs_g: '',
     calories: ''
   });
 
-  const canEdit = currentUser?.role === 'Admin' || currentUser?.role === 'Kitchen';
-  const canDelete = currentUser?.role === 'Admin';
+  const isAdmin = currentUser?.role === 'Admin';
+  const canEdit = isAdmin || currentUser?.role === 'User';
 
   useEffect(() => {
-    fetchItems();
+    fetchData();
   }, []);
 
   useEffect(() => {
     filterItems();
   }, [searchTerm, selectedCategory, items]);
 
-  const fetchItems = async () => {
+  const fetchData = async () => {
     try {
-      const response = await axios.get('/api/items');
-      setItems(response.data);
+      const [itemsRes, categoriesRes, categoryListRes] = await Promise.all([
+        axios.get('/api/items'),
+        axios.get('/api/items/categories'),
+        axios.get('/api/items/categories/list')
+      ]);
       
-      const uniqueCategories = [...new Set(response.data.map(item => item.category))];
-      setCategories(['All Categories', ...uniqueCategories]);
-      
+      setItems(itemsRes.data);
+      setCategoriesWithCounts(categoriesRes.data);
+      setCategoryList(['All Categories', ...categoryListRes.data]);
       setLoading(false);
     } catch (error) {
-      console.error('Error fetching items:', error);
+      console.error('Error fetching data:', error);
       setLoading(false);
     }
   };
@@ -54,8 +59,7 @@ const Items = () => {
     
     if (searchTerm) {
       filtered = filtered.filter(item => 
-        item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.description?.toLowerCase().includes(searchTerm.toLowerCase())
+        item.name.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
     
@@ -64,6 +68,31 @@ const Items = () => {
     }
     
     setFilteredItems(filtered);
+  };
+
+  const handleCreateCategory = async () => {
+    if (!newCategoryName.trim()) return;
+    
+    try {
+      await axios.post('/api/items/categories', { category_name: newCategoryName });
+      setNewCategoryName('');
+      fetchData();
+      alert('Category created successfully');
+    } catch (error) {
+      alert('Error creating category: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  const handleDeleteCategory = async (categoryId, categoryName) => {
+    if (!window.confirm(`Delete category "${categoryName}"?`)) return;
+    
+    try {
+      await axios.delete(`/api/items/categories/${categoryId}`);
+      fetchData();
+      alert('Category deleted successfully');
+    } catch (error) {
+      alert(error.response?.data?.message || 'Error deleting category');
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -77,7 +106,7 @@ const Items = () => {
       
       setShowForm(false);
       resetForm();
-      fetchItems();
+      fetchData();
     } catch (error) {
       alert('Error saving item: ' + (error.response?.data?.message || error.message));
     }
@@ -87,7 +116,7 @@ const Items = () => {
     if (window.confirm(`Delete item: ${item.name}?`)) {
       try {
         await axios.delete(`/api/items/${item.item_id}`);
-        fetchItems();
+        fetchData();
       } catch (error) {
         alert('Error deleting item');
       }
@@ -95,17 +124,16 @@ const Items = () => {
   };
 
   const editItem = (item) => {
+    setEditingItem(item);
     setFormData({
       name: item.name,
       category: item.category,
-      description: item.description || '',
       is_ada_friendly: item.is_ada_friendly,
       fluid_ml: item.fluid_ml || '',
-      carbs_g: item.carbs_g || '',
       sodium_mg: item.sodium_mg || '',
+      carbs_g: item.carbs_g || '',
       calories: item.calories || ''
     });
-    setEditingItem(item);
     setShowForm(true);
   };
 
@@ -113,69 +141,154 @@ const Items = () => {
     setFormData({
       name: '',
       category: '',
-      description: '',
       is_ada_friendly: false,
       fluid_ml: '',
-      carbs_g: '',
       sodium_mg: '',
+      carbs_g: '',
       calories: ''
     });
     setEditingItem(null);
   };
 
-  if (loading) return <div>Loading...</div>;
+  if (loading) {
+    return <div className="loading">Loading items...</div>;
+  }
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+    <div className="items-page">
+      <div className="page-header">
         <h1>Food Items</h1>
-        {canEdit && (
-          <button 
-            onClick={() => { resetForm(); setShowForm(true); }}
-            style={{ padding: '10px 20px', backgroundColor: '#007bff', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-          >
-            Add Item
-          </button>
-        )}
+        <div className="header-actions">
+          {isAdmin && (
+            <button 
+              className="btn btn-secondary"
+              onClick={() => setShowCategoryManager(!showCategoryManager)}
+            >
+              Manage Categories
+            </button>
+          )}
+          {canEdit && (
+            <button 
+              className="btn btn-primary"
+              onClick={() => {
+                resetForm();
+                setShowForm(true);
+              }}
+            >
+              Add New Item
+            </button>
+          )}
+        </div>
       </div>
-      
+
+      {showCategoryManager && isAdmin && (
+        <div className="category-manager">
+          <h2>Category Management</h2>
+          
+          <div className="add-category-section">
+            <h3>Add New Category</h3>
+            <div className="category-form">
+              <input
+                type="text"
+                value={newCategoryName}
+                onChange={(e) => setNewCategoryName(e.target.value)}
+                placeholder="Enter category name"
+                onKeyPress={(e) => e.key === 'Enter' && handleCreateCategory()}
+              />
+              <button onClick={handleCreateCategory} className="btn btn-primary">
+                Add Category
+              </button>
+            </div>
+          </div>
+
+          <div className="existing-categories">
+            <h3>Existing Categories</h3>
+            <table className="categories-table">
+              <thead>
+                <tr>
+                  <th>Category Name</th>
+                  <th>Items Count</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {categories.length === 0 ? (
+                  <tr>
+                    <td colSpan="3" style={{textAlign: 'center'}}>No categories found</td>
+                  </tr>
+                ) : (
+                  categories.map(cat => (
+                    <tr key={cat.category_id}>
+                      <td>{cat.category_name}</td>
+                      <td>{cat.item_count}</td>
+                      <td>
+                        <button 
+                          onClick={() => handleDeleteCategory(cat.category_id, cat.category_name)}
+                          className="btn btn-danger btn-small"
+                          disabled={cat.item_count > 0}
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      <div className="filters">
+        <input
+          type="text"
+          placeholder="Search items..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="search-input"
+        />
+        <select
+          value={selectedCategory}
+          onChange={(e) => setSelectedCategory(e.target.value)}
+          className="category-filter"
+        >
+          {categoryList.map(cat => (
+            <option key={cat} value={cat}>{cat}</option>
+          ))}
+        </select>
+      </div>
+
       {showForm && (
-        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', marginBottom: '20px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-          <h2>{editingItem ? 'Edit Item' : 'Add New Item'}</h2>
-          <form onSubmit={handleSubmit}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-              <div>
+        <div className="modal">
+          <div className="modal-content">
+            <h2>{editingItem ? 'Edit Item' : 'Add New Item'}</h2>
+            <form onSubmit={handleSubmit}>
+              <div className="form-group">
                 <label>Name *</label>
                 <input
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData({...formData, name: e.target.value})}
                   required
-                  style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ddd' }}
                 />
               </div>
-              <div>
+              
+              <div className="form-group">
                 <label>Category *</label>
-                <input
-                  type="text"
+                <select
                   value={formData.category}
                   onChange={(e) => setFormData({...formData, category: e.target.value})}
                   required
-                  placeholder="e.g., Beverages, Breads, etc."
-                  style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ddd' }}
-                />
+                >
+                  <option value="">Select Category</option>
+                  {categoryList.filter(c => c !== 'All Categories').map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
               </div>
-              <div style={{ gridColumn: 'span 2' }}>
-                <label>Description</label>
-                <input
-                  type="text"
-                  value={formData.description}
-                  onChange={(e) => setFormData({...formData, description: e.target.value})}
-                  style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ddd' }}
-                />
-              </div>
-              <div>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              
+              <div className="form-group checkbox">
+                <label>
                   <input
                     type="checkbox"
                     checked={formData.is_ada_friendly}
@@ -184,128 +297,95 @@ const Items = () => {
                   ADA Friendly
                 </label>
               </div>
-              <div></div>
-              <div>
-                <label>Fluid (ml)</label>
-                <input
-                  type="number"
-                  value={formData.fluid_ml}
-                  onChange={(e) => setFormData({...formData, fluid_ml: e.target.value})}
-                  style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ddd' }}
-                />
+              
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Fluid (ml)</label>
+                  <input
+                    type="number"
+                    value={formData.fluid_ml}
+                    onChange={(e) => setFormData({...formData, fluid_ml: e.target.value})}
+                  />
+                </div>
+                
+                <div className="form-group">
+                  <label>Sodium (mg)</label>
+                  <input
+                    type="number"
+                    value={formData.sodium_mg}
+                    onChange={(e) => setFormData({...formData, sodium_mg: e.target.value})}
+                  />
+                </div>
               </div>
-              <div>
-                <label>Carbs (g)</label>
-                <input
-                  type="number"
-                  value={formData.carbs_g}
-                  onChange={(e) => setFormData({...formData, carbs_g: e.target.value})}
-                  style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ddd' }}
-                />
+              
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Carbs (g)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={formData.carbs_g}
+                    onChange={(e) => setFormData({...formData, carbs_g: e.target.value})}
+                  />
+                </div>
+                
+                <div className="form-group">
+                  <label>Calories</label>
+                  <input
+                    type="number"
+                    value={formData.calories}
+                    onChange={(e) => setFormData({...formData, calories: e.target.value})}
+                  />
+                </div>
               </div>
-              <div>
-                <label>Sodium (mg)</label>
-                <input
-                  type="number"
-                  value={formData.sodium_mg}
-                  onChange={(e) => setFormData({...formData, sodium_mg: e.target.value})}
-                  style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ddd' }}
-                />
+              
+              <div className="form-actions">
+                <button type="submit" className="btn btn-primary">
+                  {editingItem ? 'Update' : 'Create'}
+                </button>
+                <button 
+                  type="button" 
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    setShowForm(false);
+                    resetForm();
+                  }}
+                >
+                  Cancel
+                </button>
               </div>
-              <div>
-                <label>Calories</label>
-                <input
-                  type="number"
-                  value={formData.calories}
-                  onChange={(e) => setFormData({...formData, calories: e.target.value})}
-                  style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ddd' }}
-                />
-              </div>
-            </div>
-            <div style={{ marginTop: '20px' }}>
-              <button type="submit" style={{ padding: '10px 20px', backgroundColor: '#007bff', color: 'white', border: 'none', borderRadius: '4px', marginRight: '10px' }}>
-                {editingItem ? 'Update' : 'Create'} Item
-              </button>
-              <button type="button" onClick={() => { setShowForm(false); resetForm(); }} style={{ padding: '10px 20px', backgroundColor: '#6c757d', color: 'white', border: 'none', borderRadius: '4px' }}>
-                Cancel
-              </button>
-            </div>
-          </form>
+            </form>
+          </div>
         </div>
       )}
-      
-      <div style={{ display: 'flex', gap: '20px', marginBottom: '20px' }}>
-        <input
-          type="text"
-          placeholder="Search items..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          style={{ flex: 1, padding: '10px', borderRadius: '4px', border: '1px solid #ddd' }}
-        />
-        <select
-          value={selectedCategory}
-          onChange={(e) => setSelectedCategory(e.target.value)}
-          style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ddd' }}
-        >
-          {categories.map(cat => (
-            <option key={cat} value={cat}>{cat}</option>
-          ))}
-        </select>
-      </div>
 
-      <div style={{ backgroundColor: 'white', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ backgroundColor: '#f8f9fa' }}>
-              <th style={{ padding: '12px', textAlign: 'left', borderBottom: '2px solid #dee2e6' }}>Name</th>
-              <th style={{ padding: '12px', textAlign: 'left', borderBottom: '2px solid #dee2e6' }}>Category</th>
-              <th style={{ padding: '12px', textAlign: 'center', borderBottom: '2px solid #dee2e6' }}>ADA</th>
-              <th style={{ padding: '12px', textAlign: 'right', borderBottom: '2px solid #dee2e6' }}>Fluid (ml)</th>
-              <th style={{ padding: '12px', textAlign: 'right', borderBottom: '2px solid #dee2e6' }}>Carbs (g)</th>
-              <th style={{ padding: '12px', textAlign: 'right', borderBottom: '2px solid #dee2e6' }}>Sodium (mg)</th>
-              <th style={{ padding: '12px', textAlign: 'right', borderBottom: '2px solid #dee2e6' }}>Calories</th>
-              {canEdit && <th style={{ padding: '12px', textAlign: 'center', borderBottom: '2px solid #dee2e6' }}>Actions</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {filteredItems.length === 0 ? (
-              <tr>
-                <td colSpan={canEdit ? "8" : "7"} style={{ padding: '20px', textAlign: 'center', color: '#6c757d' }}>
-                  {searchTerm || selectedCategory !== 'All Categories' ? 'No items match your filters' : 'No items found'}
-                </td>
-              </tr>
-            ) : (
-              filteredItems.map(item => (
-                <tr key={item.item_id} style={{ borderBottom: '1px solid #dee2e6' }}>
-                  <td style={{ padding: '12px' }}>{item.name}</td>
-                  <td style={{ padding: '12px' }}>{item.category}</td>
-                  <td style={{ padding: '12px', textAlign: 'center' }}>{item.is_ada_friendly ? '✓' : ''}</td>
-                  <td style={{ padding: '12px', textAlign: 'right' }}>{item.fluid_ml || '-'}</td>
-                  <td style={{ padding: '12px', textAlign: 'right' }}>{item.carbs_g || '-'}</td>
-                  <td style={{ padding: '12px', textAlign: 'right' }}>{item.sodium_mg || '-'}</td>
-                  <td style={{ padding: '12px', textAlign: 'right' }}>{item.calories || '-'}</td>
-                  {canEdit && (
-                    <td style={{ padding: '12px', textAlign: 'center' }}>
-                      <button onClick={() => editItem(item)} style={{ marginRight: '5px', padding: '5px 10px', backgroundColor: '#007bff', color: 'white', border: 'none', borderRadius: '3px', cursor: 'pointer', fontSize: '0.875rem' }}>
-                        Edit
-                      </button>
-                      {canDelete && (
-                        <button onClick={() => handleDelete(item)} style={{ padding: '5px 10px', backgroundColor: '#dc3545', color: 'white', border: 'none', borderRadius: '3px', cursor: 'pointer', fontSize: '0.875rem' }}>
-                          Delete
-                        </button>
-                      )}
-                    </td>
-                  )}
-                </tr>
-              ))
+      <div className="items-grid">
+        {filteredItems.map(item => (
+          <div key={item.item_id} className="item-card">
+            <h3>{item.name}</h3>
+            <p className="category">{item.category}</p>
+            {item.is_ada_friendly && <span className="ada-badge">ADA</span>}
+            
+            <div className="nutrition-info">
+              {item.fluid_ml && <span>Fluid: {item.fluid_ml}ml</span>}
+              {item.sodium_mg && <span>Sodium: {item.sodium_mg}mg</span>}
+              {item.carbs_g && <span>Carbs: {item.carbs_g}g</span>}
+              {item.calories && <span>Calories: {item.calories}</span>}
+            </div>
+            
+            {canEdit && (
+              <div className="item-actions">
+                <button onClick={() => editItem(item)}>Edit</button>
+                {isAdmin && (
+                  <button onClick={() => handleDelete(item)} className="delete-btn">
+                    Delete
+                  </button>
+                )}
+              </div>
             )}
-          </tbody>
-        </table>
+          </div>
+        ))}
       </div>
-      
-      <p style={{ marginTop: '10px', color: '#6c757d' }}>
-        Showing {filteredItems.length} of {items.length} items
-      </p>
     </div>
   );
 };

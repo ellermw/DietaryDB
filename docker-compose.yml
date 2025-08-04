@@ -36,6 +36,7 @@ services:
       PORT: 3000
     volumes:
       - ./backups:/backups
+      - /opt/dietarydb/backups/databases:/db_backup
     ports:
       - "3000:3000"
     depends_on:

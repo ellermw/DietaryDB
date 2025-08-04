@@ -1,73 +1,63 @@
 const express = require('express');
 const cors = require('cors');
-const helmet = require('helmet');
-const morgan = require('morgan');
-const compression = require('compression');
-require('dotenv').config();
+const dotenv = require('dotenv');
+
+dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
-app.use(helmet());
+// Basic middleware
 app.use(cors());
-app.use(compression());
-app.use(morgan('combined'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Import routes
-const authRoutes = require('./routes/auth');
-const itemRoutes = require('./routes/items');
-const userRoutes = require('./routes/users');
-const patientRoutes = require('./routes/patients');
-const orderRoutes = require('./routes/orders');
-const systemRoutes = require('./routes/system');
-const tasksRoutes = require('./routes/tasks');
+// Request logging
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} ${req.method} ${req.path}`);
+  next();
+});
 
-// Import middleware
-const { authenticateToken } = require('./middleware/auth');
-const { trackActivity } = require('./middleware/activityTracker');
-
-// Health check (no auth required)
+// Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
 
-// Test route to verify server is working
-app.get('/test', (req, res) => {
-  res.json({ message: 'Server is working' });
-});
+// API routes
+try {
+  app.use('/api/auth', require('./routes/auth'));
+  console.log('✓ Auth routes loaded');
+} catch (err) {
+  console.error('✗ Auth routes failed:', err.message);
+}
 
-// Auth routes (no activity tracking needed)
-app.use('/api/auth', authRoutes);
+try {
+  app.use('/api/dashboard', require('./routes/dashboard'));
+  console.log('✓ Dashboard routes loaded');
+} catch (err) {
+  console.error('✗ Dashboard routes failed:', err.message);
+}
 
-// Protected routes with activity tracking
-app.use('/api/items', authenticateToken, trackActivity, itemRoutes);
-app.use('/api/users', authenticateToken, trackActivity, userRoutes);
-app.use('/api/patients', authenticateToken, trackActivity, patientRoutes);
-app.use('/api/orders', authenticateToken, trackActivity, orderRoutes);
-app.use('/api/system', authenticateToken, trackActivity, systemRoutes);
-app.use('/api/tasks', authenticateToken, trackActivity, tasksRoutes);
+try {
+  app.use('/api/users', require('./routes/users'));
+  console.log('✓ Users routes loaded');
+} catch (err) {
+  console.error('✗ Users routes failed:', err.message);
+}
 
-// Log all registered routes (for debugging)
-console.log('Registered routes:');
-app._router.stack.forEach(function(r){
-  if (r.route && r.route.path){
-    console.log(r.route.path)
-  } else if (r.name === 'router' && r.regexp) {
-    console.log('Router:', r.regexp.source.replace('^\\', '').replace('\\/?(?=\\/|$)', ''));
-  }
-});
+try {
+  app.use('/api/items', require('./routes/items'));
+  console.log('✓ Items routes loaded');
+} catch (err) {
+  console.error('✗ Items routes failed:', err.message);
+}
 
-// Error handling
-app.use((err, req, res, next) => {
-  console.error('Error:', err.stack);
-  res.status(err.status || 500).json({
-    message: err.message || 'Internal server error',
-    error: process.env.NODE_ENV === 'development' ? err : {}
-  });
-});
+try {
+  app.use('/api/tasks', require('./routes/tasks'));
+  console.log('✓ Tasks routes loaded');
+} catch (err) {
+  console.error('✗ Tasks routes failed:', err.message);
+}
 
 // 404 handler
 app.use((req, res) => {
@@ -75,10 +65,18 @@ app.use((req, res) => {
   res.status(404).json({ message: 'Route not found' });
 });
 
+// Error handling
+app.use((err, req, res, next) => {
+  console.error('Error:', err.stack);
+  res.status(err.status || 500).json({
+    message: err.message || 'Internal server error'
+  });
+});
+
 // Start server
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
-  console.log('Tasks routes should be available at /api/tasks/*');
+  console.log('Environment:', process.env.NODE_ENV || 'development');
 });
 
 module.exports = app;

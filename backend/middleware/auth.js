@@ -10,7 +10,7 @@ const authenticateToken = (req, res, next) => {
 
   jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key', (err, user) => {
     if (err) {
-      return res.status(403).json({ message: 'Invalid or expired token' });
+      return res.status(403).json({ message: 'Invalid token' });
     }
     req.user = user;
     next();
@@ -31,4 +31,7 @@ const authorizeRole = (...roles) => {
   };
 };
 
-module.exports = { authenticateToken, authorizeRole };
+module.exports = {
+  authenticateToken,
+  authorizeRole
+};

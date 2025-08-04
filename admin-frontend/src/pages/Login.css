@@ -1,11 +1,11 @@
-/* Login Page Styles */
+/* Login Page - Matching Android App */
 .login-page {
   min-height: 100vh;
-  background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
+  background: linear-gradient(180deg, #2196F3 0%, #1565C0 100%);
+  padding: 32px;
 }
 
 .login-container {
@@ -15,26 +15,16 @@
 
 .login-card {
   background: white;
-  border-radius: 20px;
+  border-radius: 16px;
+  box-shadow: 0 8dp 16dp rgba(0, 0, 0, 0.15);
   padding: 40px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
   text-align: center;
 }
 
-.logo-container {
-  width: 80px;
-  height: 80px;
-  margin: 0 auto 24px;
-  background: #f0f7ff;
-  border-radius: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
 .hospital-logo {
-  width: 50px;
-  height: 50px;
+  width: 77px;
+  height: 77px;
+  margin-bottom: 24px;
 }
 
 .app-title {
@@ -42,77 +32,99 @@
   font-weight: bold;
   color: #2c3e50;
   line-height: 1.3;
-  margin-bottom: 24px;
+  margin: 0 0 24px 0;
 }
 
 .error-message {
-  background: #fee;
-  color: #e74c3c;
+  background-color: #FFEBEE;
+  color: #C62828;
   padding: 12px;
   border-radius: 8px;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
   font-size: 14px;
+  border: 1px solid #FFCDD2;
 }
 
 .login-form {
-  margin-top: 20px;
+  margin-top: 24px;
 }
 
-.input-group {
-  position: relative;
-  margin-bottom: 16px;
-  background: #f5f7fa;
-  border-radius: 12px;
+.input-field {
   display: flex;
   align-items: center;
-  padding: 4px;
-  border: 2px solid transparent;
-  transition: all 0.3s;
+  background: #F5F5F5;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+  border: 1px solid transparent;
+  transition: all 0.3s ease;
 }
 
-.input-group:focus-within {
-  border-color: #3498db;
+.input-field:focus-within {
   background: white;
+  border-color: #2196F3;
+  box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1);
 }
 
 .input-icon {
-  padding: 0 12px;
+  margin-right: 12px;
   display: flex;
   align-items: center;
+  justify-content: center;
 }
 
-.input-group input {
+.input-field input {
   flex: 1;
   border: none;
   background: transparent;
-  padding: 14px 12px 14px 0;
   font-size: 16px;
   color: #2c3e50;
   outline: none;
 }
 
-.input-group input::placeholder {
+.input-field input::placeholder {
   color: #95a5a6;
+}
+
+.show-password {
+  display: flex;
+  align-items: center;
+  margin-bottom: 24px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.show-password input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin-right: 8px;
+  cursor: pointer;
+}
+
+.show-password span {
+  font-size: 14px;
+  color: #7f8c8d;
 }
 
 .signin-button {
   width: 100%;
   padding: 16px;
-  background: #3498db;
+  background: #2196F3;
   color: white;
   border: none;
-  border-radius: 12px;
+  border-radius: 8px;
   font-size: 16px;
-  font-weight: 600;
+  font-weight: bold;
   cursor: pointer;
-  transition: all 0.3s;
-  margin-top: 8px;
+  transition: all 0.3s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .signin-button:hover:not(:disabled) {
-  background: #2980b9;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
+  background: #1976D2;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
 }
 
 .signin-button:active {
@@ -120,18 +132,17 @@
 }
 
 .signin-button:disabled {
-  opacity: 0.7;
+  background: #BDBDBD;
   cursor: not-allowed;
 }
 
-.login-help {
-  margin-top: 24px;
-  padding-top: 24px;
-  border-top: 1px solid #ecf0f1;
-}
-
-.login-help p {
-  color: #7f8c8d;
-  font-size: 14px;
-  margin: 0;
+/* Remove any animations for cleaner look */
+@media (max-width: 480px) {
+  .login-card {
+    padding: 32px 24px;
+  }
+  
+  .app-title {
+    font-size: 20px;
+  }
 }

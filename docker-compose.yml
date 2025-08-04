@@ -35,6 +35,10 @@ services:
       NODE_ENV: production
       PORT: 3000
     volumes:
+      - ./backend/routes:/app/routes:ro
+      - ./backend/config:/app/config:ro
+      - ./backend/middleware:/app/middleware:ro
+      - ./backend/server.js:/app/server.js:ro
       - ./backups:/backups
       - /opt/dietarydb/backups/databases:/db_backup
     ports:

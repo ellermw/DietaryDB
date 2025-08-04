@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import axios from '../utils/axios';
 import { useAuth } from '../contexts/AuthContext';
+import './Users.css';
 
 const Users = () => {
   const { currentUser } = useAuth();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
   const [formData, setFormData] = useState({
@@ -25,13 +27,26 @@ const Users = () => {
   const fetchUsers = async () => {
     try {
       console.log('Fetching users...');
+      setError(null);
       const response = await axios.get('/api/users');
       console.log('Users response:', response.data);
       setUsers(response.data);
       setLoading(false);
     } catch (error) {
       console.error('Error fetching users:', error);
+      setError(error.response?.data?.message || 'Failed to load users');
       setLoading(false);
+    }
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return 'Never';
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return 'Invalid Date';
+      return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+    } catch (error) {
+      return 'Invalid Date';
     }
   };
 
@@ -86,12 +101,12 @@ const Users = () => {
     setEditingUser(null);
   };
 
-  if (loading) {
-    return <div className="loading">Loading users...</div>;
-  }
-
   if (!isAdmin) {
     return <div className="access-denied">Access restricted to administrators</div>;
+  }
+
+  if (loading) {
+    return <div className="loading">Loading users...</div>;
   }
 
   return (
@@ -109,51 +124,66 @@ const Users = () => {
         </button>
       </div>
 
+      {error && (
+        <div className="error-container">
+          <div className="error-message">
+            <p>{error}</p>
+            <button onClick={fetchUsers} className="btn btn-primary">
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
+
       {users.length === 0 ? (
         <div className="card">
-          <p>No users found. This might be a loading issue.</p>
-          <button onClick={fetchUsers} className="btn btn-primary">Retry</button>
+          <p className="no-data">No users found.</p>
         </div>
       ) : (
-        <div className="card">
-          <table>
+        <div className="users-table-container">
+          <table className="users-table">
             <thead>
               <tr>
-                <th>Username</th>
-                <th>Full Name</th>
-                <th>Role</th>
-                <th>Status</th>
-                <th>Created</th>
-                <th>Actions</th>
+                <th>USERNAME</th>
+                <th>FIRST NAME</th>
+                <th>LAST NAME</th>
+                <th>ROLE</th>
+                <th>STATUS</th>
+                <th>CREATED</th>
+                <th>ACTIONS</th>
               </tr>
             </thead>
             <tbody>
               {users.map(user => (
                 <tr key={user.user_id}>
                   <td>{user.username}</td>
-                  <td>{user.first_name} {user.last_name}</td>
-                  <td>{user.role}</td>
+                  <td>{user.first_name}</td>
+                  <td>{user.last_name}</td>
                   <td>
-                    <span className={user.is_active ? 'status-active' : 'status-inactive'}>
+                    <span className={`role-badge ${user.role.toLowerCase()}`}>
+                      {user.role}
+                    </span>
+                  </td>
+                  <td>
+                    <span className={`status-badge ${user.is_active ? 'active' : 'inactive'}`}>
                       {user.is_active ? 'Active' : 'Inactive'}
                     </span>
                   </td>
-                  <td>{new Date(user.created_date).toLocaleDateString()}</td>
+                  <td>{formatDate(user.created_date)}</td>
                   <td>
-                    <div className="btn-group">
-                      <button 
-                        onClick={() => editUser(user)} 
-                        className="btn btn-primary btn-small"
-                      >
-                        Edit
-                      </button>
-                      <button 
-                        onClick={() => handleToggleActive(user)}
-                        className={`btn btn-small ${user.is_active ? 'btn-warning' : 'btn-success'}`}
-                      >
-                        {user.is_active ? 'Deactivate' : 'Activate'}
-                      </button>
-                    </div>
+                    <button 
+                      className="btn btn-sm btn-secondary"
+                      onClick={() => editUser(user)}
+                    >
+                      Edit
+                    </button>
+                    <button 
+                      className={`btn btn-sm ${user.is_active ? 'btn-danger' : 'btn-success'}`}
+                      onClick={() => handleToggleActive(user)}
+                      disabled={user.username === currentUser?.username}
+                    >
+                      {user.is_active ? 'Deactivate' : 'Activate'}
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -163,8 +193,8 @@ const Users = () => {
       )}
 
       {showForm && (
-        <div className="modal">
-          <div className="modal-content">
+        <div className="modal-overlay" onClick={() => setShowForm(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
             <h2>{editingUser ? 'Edit User' : 'Add New User'}</h2>
             <form onSubmit={handleSubmit}>
               <div className="form-group">
@@ -177,7 +207,7 @@ const Users = () => {
                   disabled={editingUser}
                 />
               </div>
-              
+
               <div className="form-group">
                 <label>Password {editingUser && '(leave blank to keep current)'}</label>
                 <input
@@ -187,7 +217,7 @@ const Users = () => {
                   required={!editingUser}
                 />
               </div>
-              
+
               <div className="form-group">
                 <label>First Name</label>
                 <input
@@ -197,7 +227,7 @@ const Users = () => {
                   required
                 />
               </div>
-              
+
               <div className="form-group">
                 <label>Last Name</label>
                 <input
@@ -207,30 +237,23 @@ const Users = () => {
                   required
                 />
               </div>
-              
+
               <div className="form-group">
                 <label>Role</label>
                 <select
                   value={formData.role}
                   onChange={(e) => setFormData({...formData, role: e.target.value})}
                 >
-                  <option value="Admin">Admin</option>
                   <option value="User">User</option>
+                  <option value="Admin">Admin</option>
                 </select>
               </div>
-              
+
               <div className="form-actions">
                 <button type="submit" className="btn btn-primary">
                   {editingUser ? 'Update' : 'Create'}
                 </button>
-                <button 
-                  type="button" 
-                  className="btn btn-secondary"
-                  onClick={() => {
-                    setShowForm(false);
-                    resetForm();
-                  }}
-                >
+                <button type="button" className="btn btn-secondary" onClick={() => setShowForm(false)}>
                   Cancel
                 </button>
               </div>

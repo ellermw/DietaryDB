@@ -1,8 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const dotenv = require('dotenv');
-
-dotenv.config();
+require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -10,73 +8,79 @@ const PORT = process.env.PORT || 3000;
 // Basic middleware
 app.use(cors());
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
-// Request logging
+// Logging
 app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} ${req.method} ${req.path}`);
+  console.log(`${req.method} ${req.path}`);
   next();
 });
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+  res.json({ status: 'healthy' });
 });
 
-// API routes
+// Test route
+app.get('/test', (req, res) => {
+  res.json({ message: 'Server is working' });
+});
+
+// Load routes with error handling
 try {
-  app.use('/api/auth', require('./routes/auth'));
-  console.log('✓ Auth routes loaded');
+  const authRoutes = require('./routes/auth');
+  app.use('/api/auth', authRoutes);
+  console.log('Auth routes loaded');
 } catch (err) {
-  console.error('✗ Auth routes failed:', err.message);
+  console.error('Failed to load auth routes:', err.message);
 }
 
 try {
-  app.use('/api/dashboard', require('./routes/dashboard'));
-  console.log('✓ Dashboard routes loaded');
+  const dashboardRoutes = require('./routes/dashboard');
+  app.use('/api/dashboard', dashboardRoutes);
+  console.log('Dashboard routes loaded');
 } catch (err) {
-  console.error('✗ Dashboard routes failed:', err.message);
+  console.error('Failed to load dashboard routes:', err.message);
 }
 
 try {
-  app.use('/api/users', require('./routes/users'));
-  console.log('✓ Users routes loaded');
+  const usersRoutes = require('./routes/users');
+  app.use('/api/users', usersRoutes);
+  console.log('Users routes loaded');
 } catch (err) {
-  console.error('✗ Users routes failed:', err.message);
+  console.error('Failed to load users routes:', err.message);
 }
 
 try {
-  app.use('/api/items', require('./routes/items'));
-  console.log('✓ Items routes loaded');
+  const itemsRoutes = require('./routes/items');
+  app.use('/api/items', itemsRoutes);
+  console.log('Items routes loaded');
 } catch (err) {
-  console.error('✗ Items routes failed:', err.message);
+  console.error('Failed to load items routes:', err.message);
 }
 
 try {
-  app.use('/api/tasks', require('./routes/tasks'));
-  console.log('✓ Tasks routes loaded');
+  const tasksRoutes = require('./routes/tasks');
+  app.use('/api/tasks', tasksRoutes);
+  console.log('Tasks routes loaded');
 } catch (err) {
-  console.error('✗ Tasks routes failed:', err.message);
+  console.error('Failed to load tasks routes:', err.message);
 }
+
+// Error handler
+app.use((err, req, res, next) => {
+  console.error('Error:', err);
+  res.status(500).json({ message: err.message });
+});
 
 // 404 handler
 app.use((req, res) => {
-  console.log('404 Not Found:', req.method, req.path);
+  console.log('404:', req.path);
   res.status(404).json({ message: 'Route not found' });
 });
 
-// Error handling
-app.use((err, req, res, next) => {
-  console.error('Error:', err.stack);
-  res.status(err.status || 500).json({
-    message: err.message || 'Internal server error'
-  });
-});
-
 // Start server
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
-  console.log('Environment:', process.env.NODE_ENV || 'development');
 });
 
 module.exports = app;

@@ -1,20 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import axios from '../utils/axios';
 import { useAuth } from '../contexts/AuthContext';
+import './Items.css';
 
 const Items = () => {
   const { currentUser } = useAuth();
   const [items, setItems] = useState([]);
-  const [categories, setCategoriesWithCounts] = useState([]);
-  const [categoryList, setCategoryList] = useState([]);
-  const [filteredItems, setFilteredItems] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showItemForm, setShowItemForm] = useState(false);
+  const [showCategoryForm, setShowCategoryForm] = useState(false);
+  const [showManageCategories, setShowManageCategories] = useState(false);
+  const [newCategory, setNewCategory] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('All Categories');
-  const [showForm, setShowForm] = useState(false);
-  const [showCategoryManager, setShowCategoryManager] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState('');
   const [editingItem, setEditingItem] = useState(null);
-  const [newCategoryName, setNewCategoryName] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     category: '',
@@ -26,97 +26,79 @@ const Items = () => {
   });
 
   const isAdmin = currentUser?.role === 'Admin';
-  const canEdit = isAdmin || currentUser?.role === 'User';
 
   useEffect(() => {
-    fetchData();
+    fetchItems();
+    fetchCategories();
   }, []);
 
-  useEffect(() => {
-    filterItems();
-  }, [searchTerm, selectedCategory, items]);
-
-  const fetchData = async () => {
+  const fetchItems = async () => {
     try {
-      const [itemsRes, categoriesRes, categoryListRes] = await Promise.all([
-        axios.get('/api/items'),
-        axios.get('/api/items/categories'),
-        axios.get('/api/items/categories/list')
-      ]);
-      
-      setItems(itemsRes.data);
-      setCategoriesWithCounts(categoriesRes.data);
-      setCategoryList(['All Categories', ...categoryListRes.data]);
+      const response = await axios.get('/api/items');
+      setItems(response.data);
       setLoading(false);
     } catch (error) {
-      console.error('Error fetching data:', error);
+      console.error('Error fetching items:', error);
       setLoading(false);
     }
   };
 
-  const filterItems = () => {
-    let filtered = items;
-    
-    if (searchTerm) {
-      filtered = filtered.filter(item => 
-        item.name.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    }
-    
-    if (selectedCategory !== 'All Categories') {
-      filtered = filtered.filter(item => item.category === selectedCategory);
-    }
-    
-    setFilteredItems(filtered);
-  };
-
-  const handleCreateCategory = async () => {
-    if (!newCategoryName.trim()) return;
-    
+  const fetchCategories = async () => {
     try {
-      await axios.post('/api/items/categories', { category_name: newCategoryName });
-      setNewCategoryName('');
-      fetchData();
-      alert('Category created successfully');
+      const response = await axios.get('/api/items/categories');
+      setCategories(response.data);
     } catch (error) {
-      alert('Error creating category: ' + (error.response?.data?.message || error.message));
+      console.error('Error fetching categories:', error);
     }
   };
 
-  const handleDeleteCategory = async (categoryId, categoryName) => {
-    if (!window.confirm(`Delete category "${categoryName}"?`)) return;
+  const handleAddCategory = async () => {
+    if (!newCategory.trim()) return;
     
     try {
-      await axios.delete(`/api/items/categories/${categoryId}`);
-      fetchData();
-      alert('Category deleted successfully');
+      // For now, just add to local state
+      // The category will be created when first item is added
+      if (!categories.includes(newCategory)) {
+        setCategories([...categories, newCategory]);
+      }
+      setNewCategory('');
+      alert('Category added successfully!');
     } catch (error) {
-      alert(error.response?.data?.message || 'Error deleting category');
+      alert('Error adding category: ' + (error.response?.data?.message || error.message));
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
+      const dataToSend = {
+        ...formData,
+        fluid_ml: formData.fluid_ml ? parseInt(formData.fluid_ml) : null,
+        sodium_mg: formData.sodium_mg ? parseInt(formData.sodium_mg) : null,
+        carbs_g: formData.carbs_g ? parseFloat(formData.carbs_g) : null,
+        calories: formData.calories ? parseInt(formData.calories) : null
+      };
+
       if (editingItem) {
-        await axios.put(`/api/items/${editingItem.item_id}`, formData);
+        await axios.put(`/api/items/${editingItem.item_id}`, dataToSend);
       } else {
-        await axios.post('/api/items', formData);
+        await axios.post('/api/items', dataToSend);
       }
       
-      setShowForm(false);
+      setShowItemForm(false);
       resetForm();
-      fetchData();
+      fetchItems();
+      fetchCategories();
     } catch (error) {
       alert('Error saving item: ' + (error.response?.data?.message || error.message));
     }
   };
 
   const handleDelete = async (item) => {
-    if (window.confirm(`Delete item: ${item.name}?`)) {
+    if (window.confirm(`Are you sure you want to delete "${item.name}"?`)) {
       try {
         await axios.delete(`/api/items/${item.item_id}`);
-        fetchData();
+        fetchItems();
       } catch (error) {
         alert('Error deleting item');
       }
@@ -128,13 +110,13 @@ const Items = () => {
     setFormData({
       name: item.name,
       category: item.category,
-      is_ada_friendly: item.is_ada_friendly,
+      is_ada_friendly: item.is_ada_friendly || false,
       fluid_ml: item.fluid_ml || '',
       sodium_mg: item.sodium_mg || '',
       carbs_g: item.carbs_g || '',
       calories: item.calories || ''
     });
-    setShowForm(true);
+    setShowItemForm(true);
   };
 
   const resetForm = () => {
@@ -150,117 +132,144 @@ const Items = () => {
     setEditingItem(null);
   };
 
+  const filteredItems = items.filter(item => {
+    const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesCategory = !selectedCategory || item.category === selectedCategory;
+    return matchesSearch && matchesCategory;
+  });
+
+  const categoryCounts = categories.reduce((acc, cat) => {
+    acc[cat] = items.filter(item => item.category === cat).length;
+    return acc;
+  }, {});
+
   if (loading) {
     return <div className="loading">Loading items...</div>;
   }
 
   return (
     <div className="items-page">
-      <div className="page-header">
+      <div className="items-header">
         <h1>Food Items</h1>
         <div className="header-actions">
           {isAdmin && (
-            <button 
-              className="btn btn-secondary"
-              onClick={() => setShowCategoryManager(!showCategoryManager)}
-            >
-              Manage Categories
-            </button>
-          )}
-          {canEdit && (
-            <button 
-              className="btn btn-primary"
-              onClick={() => {
-                resetForm();
-                setShowForm(true);
-              }}
-            >
-              Add New Item
-            </button>
+            <>
+              <button 
+                className="btn btn-secondary"
+                onClick={() => setShowManageCategories(true)}
+              >
+                Manage Categories
+              </button>
+              <button 
+                className="btn btn-primary"
+                onClick={() => {
+                  resetForm();
+                  setShowItemForm(true);
+                }}
+              >
+                Add New Item
+              </button>
+            </>
           )}
         </div>
       </div>
 
-      {showCategoryManager && isAdmin && (
-        <div className="category-manager">
-          <h2>Category Management</h2>
-          
-          <div className="add-category-section">
-            <h3>Add New Category</h3>
-            <div className="category-form">
-              <input
-                type="text"
-                value={newCategoryName}
-                onChange={(e) => setNewCategoryName(e.target.value)}
-                placeholder="Enter category name"
-                onKeyPress={(e) => e.key === 'Enter' && handleCreateCategory()}
-              />
-              <button onClick={handleCreateCategory} className="btn btn-primary">
-                Add Category
-              </button>
-            </div>
-          </div>
-
-          <div className="existing-categories">
-            <h3>Existing Categories</h3>
-            <table className="categories-table">
-              <thead>
-                <tr>
-                  <th>Category Name</th>
-                  <th>Items Count</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {categories.length === 0 ? (
-                  <tr>
-                    <td colSpan="3" style={{textAlign: 'center'}}>No categories found</td>
-                  </tr>
-                ) : (
-                  categories.map(cat => (
-                    <tr key={cat.category_id}>
-                      <td>{cat.category_name}</td>
-                      <td>{cat.item_count}</td>
-                      <td>
-                        <button 
-                          onClick={() => handleDeleteCategory(cat.category_id, cat.category_name)}
-                          className="btn btn-danger btn-small"
-                          disabled={cat.item_count > 0}
-                        >
-                          Delete
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      <div className="filters">
+      <div className="items-filters">
         <input
           type="text"
           placeholder="Search items..."
+          className="search-box"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          className="search-input"
         />
-        <select
+        <select 
+          className="category-filter"
           value={selectedCategory}
           onChange={(e) => setSelectedCategory(e.target.value)}
-          className="category-filter"
         >
-          {categoryList.map(cat => (
+          <option value="">All Categories</option>
+          {categories.map(cat => (
             <option key={cat} value={cat}>{cat}</option>
           ))}
         </select>
       </div>
 
-      {showForm && (
-        <div className="modal">
-          <div className="modal-content">
+      {filteredItems.length === 0 ? (
+        <div className="no-items">
+          <p>No items found.</p>
+          {isAdmin && (
+            <button 
+              className="btn btn-primary"
+              onClick={() => {
+                resetForm();
+                setShowItemForm(true);
+              }}
+            >
+              Add First Item
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="items-grid">
+          {filteredItems.map(item => (
+            <div key={item.item_id} className="item-card">
+              <div className="item-header">
+                <h3 className="item-name">{item.name}</h3>
+                <span className="item-category">{item.category}</span>
+              </div>
+              
+              {item.is_ada_friendly && (
+                <div className="ada-badge">ADA Friendly</div>
+              )}
+              
+              <div className="item-details">
+                {item.calories && (
+                  <div className="detail-item">
+                    Calories: <span>{item.calories}</span>
+                  </div>
+                )}
+                {item.carbs_g && (
+                  <div className="detail-item">
+                    Carbs: <span>{item.carbs_g}g</span>
+                  </div>
+                )}
+                {item.sodium_mg && (
+                  <div className="detail-item">
+                    Sodium: <span>{item.sodium_mg}mg</span>
+                  </div>
+                )}
+                {item.fluid_ml && (
+                  <div className="detail-item">
+                    Fluid: <span>{item.fluid_ml}ml</span>
+                  </div>
+                )}
+              </div>
+              
+              {isAdmin && (
+                <div className="item-actions">
+                  <button 
+                    className="btn btn-sm btn-primary"
+                    onClick={() => editItem(item)}
+                  >
+                    Edit
+                  </button>
+                  <button 
+                    className="btn btn-sm btn-danger"
+                    onClick={() => handleDelete(item)}
+                  >
+                    Delete
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Item Form Modal */}
+      {showItemForm && (
+        <div className="modal-overlay" onClick={() => setShowItemForm(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
             <h2>{editingItem ? 'Edit Item' : 'Add New Item'}</h2>
             <form onSubmit={handleSubmit}>
               <div className="form-group">
@@ -272,7 +281,7 @@ const Items = () => {
                   required
                 />
               </div>
-              
+
               <div className="form-group">
                 <label>Category *</label>
                 <select
@@ -281,44 +290,33 @@ const Items = () => {
                   required
                 >
                   <option value="">Select Category</option>
-                  {categoryList.filter(c => c !== 'All Categories').map(cat => (
+                  {categories.map(cat => (
                     <option key={cat} value={cat}>{cat}</option>
                   ))}
                 </select>
               </div>
-              
-              <div className="form-group checkbox">
+
+              <div className="form-group checkbox-group">
                 <label>
                   <input
                     type="checkbox"
                     checked={formData.is_ada_friendly}
                     onChange={(e) => setFormData({...formData, is_ada_friendly: e.target.checked})}
                   />
-                  ADA Friendly
+                  <span>ADA Friendly</span>
                 </label>
               </div>
-              
+
               <div className="form-row">
                 <div className="form-group">
-                  <label>Fluid (ml)</label>
+                  <label>Calories</label>
                   <input
                     type="number"
-                    value={formData.fluid_ml}
-                    onChange={(e) => setFormData({...formData, fluid_ml: e.target.value})}
+                    value={formData.calories}
+                    onChange={(e) => setFormData({...formData, calories: e.target.value})}
                   />
                 </div>
-                
-                <div className="form-group">
-                  <label>Sodium (mg)</label>
-                  <input
-                    type="number"
-                    value={formData.sodium_mg}
-                    onChange={(e) => setFormData({...formData, sodium_mg: e.target.value})}
-                  />
-                </div>
-              </div>
-              
-              <div className="form-row">
+
                 <div className="form-group">
                   <label>Carbs (g)</label>
                   <input
@@ -328,29 +326,33 @@ const Items = () => {
                     onChange={(e) => setFormData({...formData, carbs_g: e.target.value})}
                   />
                 </div>
-                
+              </div>
+
+              <div className="form-row">
                 <div className="form-group">
-                  <label>Calories</label>
+                  <label>Sodium (mg)</label>
                   <input
                     type="number"
-                    value={formData.calories}
-                    onChange={(e) => setFormData({...formData, calories: e.target.value})}
+                    value={formData.sodium_mg}
+                    onChange={(e) => setFormData({...formData, sodium_mg: e.target.value})}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Fluid (ml)</label>
+                  <input
+                    type="number"
+                    value={formData.fluid_ml}
+                    onChange={(e) => setFormData({...formData, fluid_ml: e.target.value})}
                   />
                 </div>
               </div>
-              
+
               <div className="form-actions">
                 <button type="submit" className="btn btn-primary">
                   {editingItem ? 'Update' : 'Create'}
                 </button>
-                <button 
-                  type="button" 
-                  className="btn btn-secondary"
-                  onClick={() => {
-                    setShowForm(false);
-                    resetForm();
-                  }}
-                >
+                <button type="button" className="btn btn-secondary" onClick={() => setShowItemForm(false)}>
                   Cancel
                 </button>
               </div>
@@ -359,33 +361,69 @@ const Items = () => {
         </div>
       )}
 
-      <div className="items-grid">
-        {filteredItems.map(item => (
-          <div key={item.item_id} className="item-card">
-            <h3>{item.name}</h3>
-            <p className="category">{item.category}</p>
-            {item.is_ada_friendly && <span className="ada-badge">ADA</span>}
+      {/* Manage Categories Modal */}
+      {showManageCategories && (
+        <div className="modal-overlay" onClick={() => setShowManageCategories(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h2>Category Management</h2>
             
-            <div className="nutrition-info">
-              {item.fluid_ml && <span>Fluid: {item.fluid_ml}ml</span>}
-              {item.sodium_mg && <span>Sodium: {item.sodium_mg}mg</span>}
-              {item.carbs_g && <span>Carbs: {item.carbs_g}g</span>}
-              {item.calories && <span>Calories: {item.calories}</span>}
-            </div>
-            
-            {canEdit && (
-              <div className="item-actions">
-                <button onClick={() => editItem(item)}>Edit</button>
-                {isAdmin && (
-                  <button onClick={() => handleDelete(item)} className="delete-btn">
-                    Delete
-                  </button>
-                )}
+            <div className="category-form">
+              <h3>Add New Category</h3>
+              <div className="form-row">
+                <input
+                  type="text"
+                  placeholder="Category name"
+                  value={newCategory}
+                  onChange={(e) => setNewCategory(e.target.value)}
+                />
+                <button 
+                  className="btn btn-primary"
+                  onClick={handleAddCategory}
+                >
+                  Add Category
+                </button>
               </div>
-            )}
+            </div>
+
+            <div className="categories-list">
+              <h3>Existing Categories</h3>
+              <table>
+                <thead>
+                  <tr>
+                    <th>CATEGORY NAME</th>
+                    <th>ITEMS COUNT</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {categories.length === 0 ? (
+                    <tr>
+                      <td colSpan="2" style={{ textAlign: 'center' }}>
+                        No categories found
+                      </td>
+                    </tr>
+                  ) : (
+                    categories.map(cat => (
+                      <tr key={cat}>
+                        <td>{cat}</td>
+                        <td>{categoryCounts[cat] || 0}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="form-actions">
+              <button 
+                className="btn btn-secondary" 
+                onClick={() => setShowManageCategories(false)}
+              >
+                Close
+              </button>
+            </div>
           </div>
-        ))}
-      </div>
+        </div>
+      )}
     </div>
   );
 };

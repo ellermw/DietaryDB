@@ -6,32 +6,46 @@ const router = express.Router();
 
 router.get('/stats', authenticateToken, async (req, res) => {
   try {
-    // Get main stats
-    const statsResult = await db.query(`
-      SELECT 
-        (SELECT COUNT(*) FROM items WHERE is_active = true) as total_items,
-        (SELECT COUNT(DISTINCT category) FROM items WHERE is_active = true) as total_categories,
-        (SELECT COUNT(*) FROM users WHERE is_active = true) as total_users
+    const [usersResult, itemsResult] = await Promise.all([
+      db.query('SELECT COUNT(*) as count FROM users WHERE is_active = true'),
+      db.query('SELECT COUNT(*) as count FROM items WHERE is_active = true')
+    ]);
+    
+    const activeUsersResult = await db.query(`
+      SELECT first_name, last_name, username, last_login
+      FROM users 
+      WHERE last_login > NOW() - INTERVAL '30 minutes'
+      AND is_active = true
+      ORDER BY last_login DESC
     `);
     
-    // Get user activity
-    const activityResult = await db.query(`
-      SELECT 
-        COUNT(*) as total_logins,
-        COUNT(DISTINCT user_id) as unique_users,
-        MAX(last_login) as last_activity
-      FROM users 
-      WHERE last_login IS NOT NULL 
-        AND last_login > CURRENT_TIMESTAMP - INTERVAL '24 hours'
+    const lastActivityResult = await db.query(`
+      SELECT first_name, last_name, last_login as timestamp
+      FROM users
+      WHERE last_login IS NOT NULL
+      ORDER BY last_login DESC
+      LIMIT 1
     `);
     
     res.json({
-      ...statsResult.rows[0],
-      user_activity: activityResult.rows[0]
+      stats: {
+        activePatients: 0,
+        pendingOrders: 0,
+        totalItems: parseInt(itemsResult.rows[0].count) || 0,
+        totalUsers: parseInt(usersResult.rows[0].count) || 0
+      },
+      userActivity: {
+        activeUsers: activeUsersResult.rows.map(u => u.first_name),
+        lastActivity: lastActivityResult.rows[0] ? {
+          user: `${lastActivityResult.rows[0].first_name} ${lastActivityResult.rows[0].last_name}`,
+          action: 'logged in',
+          timestamp: lastActivityResult.rows[0].timestamp
+        } : null
+      }
     });
   } catch (error) {
-    console.error('Error fetching dashboard stats:', error);
-    res.status(500).json({ message: 'Error fetching statistics' });
+    console.error('Dashboard stats error:', error);
+    res.status(500).json({ message: 'Error fetching dashboard statistics' });
   }
 });
 

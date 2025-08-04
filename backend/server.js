@@ -8,24 +8,35 @@ const PORT = process.env.PORT || 3000;
 // Basic middleware
 app.use(cors());
 app.use(express.json());
-
-// Logging
-app.use((req, res, next) => {
-  console.log(`${req.method} ${req.path}`);
-  next();
-});
+app.use(express.urlencoded({ extended: true }));
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ status: 'healthy' });
+  res.json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
 
-// Test route
-app.get('/test', (req, res) => {
-  res.json({ message: 'Server is working' });
-});
+// Load middleware
+let authenticateToken, authorizeRole, trackActivity;
 
-// Load routes with error handling
+try {
+  const auth = require('./middleware/auth');
+  authenticateToken = auth.authenticateToken;
+  authorizeRole = auth.authorizeRole;
+} catch (err) {
+  console.error('Auth middleware not found, creating dummy');
+  authenticateToken = (req, res, next) => next();
+  authorizeRole = () => (req, res, next) => next();
+}
+
+try {
+  const activity = require('./middleware/activityTracker');
+  trackActivity = activity.trackActivity;
+} catch (err) {
+  console.error('Activity tracker not found, creating dummy');
+  trackActivity = (req, res, next) => next();
+}
+
+// Load routes
 try {
   const authRoutes = require('./routes/auth');
   app.use('/api/auth', authRoutes);
@@ -36,49 +47,57 @@ try {
 
 try {
   const dashboardRoutes = require('./routes/dashboard');
-  app.use('/api/dashboard', dashboardRoutes);
+  app.use('/api/dashboard', authenticateToken, trackActivity, dashboardRoutes);
   console.log('Dashboard routes loaded');
 } catch (err) {
   console.error('Failed to load dashboard routes:', err.message);
 }
 
 try {
-  const usersRoutes = require('./routes/users');
-  app.use('/api/users', usersRoutes);
-  console.log('Users routes loaded');
-} catch (err) {
-  console.error('Failed to load users routes:', err.message);
-}
+  const itemRoutes = require('./routes/items');
+  app.use('/api/items', authenticateToken, trackActivity, itemRoutes);
 
 try {
-  const itemsRoutes = require('./routes/items');
-  app.use('/api/items', itemsRoutes);
+  const categoryRoutes = require('./routes/categories');
+  app.use('/api/categories', authenticateToken, trackActivity, categoryRoutes);
+  console.log('Category routes loaded');
+} catch (err) {
+  console.error('Failed to load category routes:', err.message);
+}
   console.log('Items routes loaded');
 } catch (err) {
   console.error('Failed to load items routes:', err.message);
 }
 
 try {
+  const userRoutes = require('./routes/users');
+  app.use('/api/users', authenticateToken, trackActivity, userRoutes);
+  console.log('Users routes loaded');
+} catch (err) {
+  console.error('Failed to load users routes:', err.message);
+}
+
+try {
   const tasksRoutes = require('./routes/tasks');
-  app.use('/api/tasks', tasksRoutes);
+  app.use('/api/tasks', authenticateToken, trackActivity, tasksRoutes);
   console.log('Tasks routes loaded');
 } catch (err) {
   console.error('Failed to load tasks routes:', err.message);
 }
 
-// Error handler
+// Error handling
 app.use((err, req, res, next) => {
-  console.error('Error:', err);
-  res.status(500).json({ message: err.message });
+  console.error(err.stack);
+  res.status(err.status || 500).json({
+    message: err.message || 'Internal server error'
+  });
 });
 
 // 404 handler
 app.use((req, res) => {
-  console.log('404:', req.path);
   res.status(404).json({ message: 'Route not found' });
 });
 
-// Start server
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
 });

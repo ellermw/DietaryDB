@@ -1,17 +1,21 @@
 FROM node:18-alpine
 
+# Install PostgreSQL client for backups
+RUN apk add --no-cache postgresql-client
+
 WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
-RUN npm install --only=production
+
+# Install dependencies
+RUN npm install
 
 # Copy application files
 COPY . .
 
-# Remove any old routes that might be in the image
-RUN rm -rf /app/routes/patients.js /app/routes/orders.js /app/routes/system.js /app/routes/menus.js
-
+# Expose port
 EXPOSE 3000
 
-CMD ["node", "server.js"]
+# Start the application
+CMD ["sh", "/app/start.sh"]

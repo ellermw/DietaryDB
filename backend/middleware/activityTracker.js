@@ -1,6 +1,9 @@
-const trackActivity = (req, res, next) => {
-  // Simple activity tracking - can be enhanced later
-  console.log(`Activity: ${req.method} ${req.path} by ${req.user?.username || 'anonymous'}`);
+const trackActivity = async (req, res, next) => {
+  try {
+    console.log(`[${new Date().toISOString()}] ${req.user?.username || 'anonymous'} - ${req.method} ${req.path}`);
+  } catch (error) {
+    console.error('Activity tracking error:', error);
+  }
   next();
 };
 

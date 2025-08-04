@@ -228,3 +228,53 @@
   font-size: 18px;
   color: #7f8c8d;
 }
+
+/* Action Buttons */
+.action-buttons {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.role-badge {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.role-admin {
+  background-color: #dc3545;
+  color: white;
+}
+
+.role-user {
+  background-color: #007bff;
+  color: white;
+}
+
+.role-kitchen {
+  background-color: #28a745;
+  color: white;
+}
+
+.role-dietary {
+  background-color: #17a2b8;
+  color: white;
+}
+
+.status-badge {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.status-badge.active {
+  background-color: #d4edda;
+  color: #155724;
+}
+
+.status-badge.inactive {
+  background-color: #f8d7da;
+  color: #721c24;
+}

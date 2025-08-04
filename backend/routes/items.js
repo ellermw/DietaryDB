@@ -5,55 +5,10 @@ const { authenticateToken, authorizeRole } = require('../middleware/auth');
 
 const router = express.Router();
 
-// Get all categories
-router.get('/categories', authenticateToken, async (req, res) => {
-  try {
-    const result = await db.query(
-      'SELECT DISTINCT category FROM items ORDER BY category'
-    );
-    const categories = result.rows.map(row => row.category);
-    res.json(categories);
-  } catch (error) {
-    console.error('Error fetching categories:', error);
-    res.status(500).json({ message: 'Error fetching categories' });
-  }
-});
-
-// Create new category
-router.post('/categories', [
-  authenticateToken,
-  authorizeRole('Admin'),
-  body('category').notEmpty().trim()
-], async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
-    const { category } = req.body;
-    
-    const existing = await db.query(
-      'SELECT category FROM items WHERE LOWER(category) = LOWER($1) LIMIT 1',
-      [category]
-    );
-    
-    if (existing.rows.length > 0) {
-      return res.status(400).json({ message: 'Category already exists' });
-    }
-    
-    res.json({ message: 'Category will be created when first item is added', category });
-  } catch (error) {
-    console.error('Error creating category:', error);
-    res.status(500).json({ message: 'Error creating category' });
-  }
-});
-
 // Get all items
 router.get('/', authenticateToken, async (req, res) => {
   try {
     const { category, search, active } = req.query;
-    
     let query = 'SELECT * FROM items WHERE 1=1';
     const params = [];
     let paramCount = 1;
@@ -85,6 +40,89 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
+// Get categories with item counts
+router.get('/categories', authenticateToken, async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT 
+        category as category_name,
+        COUNT(*) as item_count,
+        SUM(CASE WHEN is_active = true THEN 1 ELSE 0 END) as active_count
+      FROM items 
+      WHERE category IS NOT NULL
+      GROUP BY category
+      ORDER BY category
+    `);
+    
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching categories:', error);
+    res.status(500).json({ message: 'Error fetching categories' });
+  }
+});
+
+// Create new category (by creating first item in category)
+router.post('/categories', [
+  authenticateToken,
+  authorizeRole('Admin'),
+  body('category_name').notEmpty().trim()
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { category_name } = req.body;
+    
+    // Check if category already exists
+    const existing = await db.query(
+      'SELECT COUNT(*) as count FROM items WHERE category = $1',
+      [category_name]
+    );
+    
+    if (existing.rows[0].count > 0) {
+      return res.status(400).json({ message: 'Category already exists' });
+    }
+    
+    res.json({ 
+      message: 'Category created successfully',
+      category_name: category_name 
+    });
+  } catch (error) {
+    console.error('Error creating category:', error);
+    res.status(500).json({ message: 'Error creating category' });
+  }
+});
+
+// Delete category (only if no items)
+router.delete('/categories/:name', [
+  authenticateToken,
+  authorizeRole('Admin')
+], async (req, res) => {
+  try {
+    const categoryName = decodeURIComponent(req.params.name);
+    
+    // Check if category has items
+    const itemCount = await db.query(
+      'SELECT COUNT(*) as count FROM items WHERE category = $1',
+      [categoryName]
+    );
+    
+    if (itemCount.rows[0].count > 0) {
+      return res.status(400).json({ 
+        message: 'Cannot delete category with existing items',
+        item_count: itemCount.rows[0].count 
+      });
+    }
+    
+    res.json({ message: 'Category can be deleted (no items exist)' });
+  } catch (error) {
+    console.error('Error deleting category:', error);
+    res.status(500).json({ message: 'Error deleting category' });
+  }
+});
+
 // Get single item
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
@@ -109,12 +147,7 @@ router.post('/', [
   authenticateToken,
   authorizeRole('Admin'),
   body('name').notEmpty().trim(),
-  body('category').notEmpty().trim(),
-  body('is_ada_friendly').optional().isBoolean(),
-  body('fluid_ml').optional().isInt({ min: 0 }),
-  body('sodium_mg').optional().isInt({ min: 0 }),
-  body('carbs_g').optional().isFloat({ min: 0 }),
-  body('calories').optional().isInt({ min: 0 })
+  body('category').notEmpty().trim()
 ], async (req, res) => {
   try {
     const errors = validationResult(req);

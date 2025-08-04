@@ -26,27 +26,14 @@ const Users = () => {
 
   const fetchUsers = async () => {
     try {
-      console.log('Fetching users...');
       setError(null);
       const response = await axios.get('/api/users');
-      console.log('Users response:', response.data);
       setUsers(response.data);
       setLoading(false);
     } catch (error) {
       console.error('Error fetching users:', error);
       setError(error.response?.data?.message || 'Failed to load users');
       setLoading(false);
-    }
-  };
-
-  const formatDate = (dateString) => {
-    if (!dateString) return 'Never';
-    try {
-      const date = new Date(dateString);
-      if (isNaN(date.getTime())) return 'Invalid Date';
-      return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
-    } catch (error) {
-      return 'Invalid Date';
     }
   };
 
@@ -67,6 +54,23 @@ const Users = () => {
     }
   };
 
+  const handleDelete = async (user) => {
+    if (user.username === 'admin') {
+      alert('Cannot delete the system admin user');
+      return;
+    }
+    
+    if (window.confirm(`Are you sure you want to permanently delete user "${user.username}"?`)) {
+      try {
+        await axios.delete(`/api/users/${user.user_id}`);
+        alert('User deleted successfully');
+        fetchUsers();
+      } catch (error) {
+        alert('Error deleting user: ' + (error.response?.data?.message || error.message));
+      }
+    }
+  };
+
   const handleToggleActive = async (user) => {
     try {
       await axios.put(`/api/users/${user.user_id}`, {
@@ -83,8 +87,8 @@ const Users = () => {
     setFormData({
       username: user.username,
       password: '',
-      first_name: user.first_name,
-      last_name: user.last_name,
+      first_name: user.first_name || '',
+      last_name: user.last_name || '',
       role: user.role
     });
     setShowForm(true);
@@ -101,104 +105,100 @@ const Users = () => {
     setEditingUser(null);
   };
 
-  if (!isAdmin) {
-    return <div className="access-denied">Access restricted to administrators</div>;
-  }
+  const formatDate = (dateString) => {
+    if (!dateString) return 'Never';
+    return new Date(dateString).toLocaleString();
+  };
 
-  if (loading) {
-    return <div className="loading">Loading users...</div>;
-  }
+  if (loading) return <div className="loading">Loading users...</div>;
+  if (error) return <div className="error-message">{error}</div>;
 
   return (
     <div className="users-page">
       <div className="page-header">
         <h1>User Management</h1>
-        <button 
-          className="btn btn-primary"
-          onClick={() => {
-            resetForm();
-            setShowForm(true);
-          }}
-        >
-          Add New User
-        </button>
+        {isAdmin && (
+          <button
+            className="btn btn-primary"
+            onClick={() => {
+              resetForm();
+              setShowForm(true);
+            }}
+          >
+            Add New User
+          </button>
+        )}
       </div>
 
-      {error && (
-        <div className="error-container">
-          <div className="error-message">
-            <p>{error}</p>
-            <button onClick={fetchUsers} className="btn btn-primary">
-              Retry
-            </button>
-          </div>
-        </div>
-      )}
-
-      {users.length === 0 ? (
-        <div className="card">
-          <p className="no-data">No users found.</p>
-        </div>
-      ) : (
-        <div className="users-table-container">
-          <table className="users-table">
-            <thead>
-              <tr>
-                <th>USERNAME</th>
-                <th>FIRST NAME</th>
-                <th>LAST NAME</th>
-                <th>ROLE</th>
-                <th>STATUS</th>
-                <th>CREATED</th>
-                <th>ACTIONS</th>
+      <div className="users-table-container">
+        <table className="users-table">
+          <thead>
+            <tr>
+              <th>Username</th>
+              <th>First Name</th>
+              <th>Last Name</th>
+              <th>Role</th>
+              <th>Status</th>
+              <th>Created</th>
+              {isAdmin && <th>Actions</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {users.map(user => (
+              <tr key={user.user_id}>
+                <td>{user.username}</td>
+                <td>{user.first_name}</td>
+                <td>{user.last_name}</td>
+                <td>
+                  <span className={`role-badge role-${user.role.toLowerCase()}`}>
+                    {user.role}
+                  </span>
+                </td>
+                <td>
+                  <span className={`status-badge ${user.is_active ? 'active' : 'inactive'}`}>
+                    {user.is_active ? 'Active' : 'Inactive'}
+                  </span>
+                </td>
+                <td>{formatDate(user.created_date)}</td>
+                {isAdmin && (
+                  <td>
+                    <div className="action-buttons">
+                      <button
+                        className="btn btn-sm btn-info"
+                        onClick={() => editUser(user)}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        className="btn btn-sm btn-warning"
+                        onClick={() => handleToggleActive(user)}
+                      >
+                        {user.is_active ? 'Deactivate' : 'Activate'}
+                      </button>
+                      {user.username !== 'admin' && (
+                        <button
+                          className="btn btn-sm btn-danger"
+                          onClick={() => handleDelete(user)}
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                )}
               </tr>
-            </thead>
-            <tbody>
-              {users.map(user => (
-                <tr key={user.user_id}>
-                  <td>{user.username}</td>
-                  <td>{user.first_name}</td>
-                  <td>{user.last_name}</td>
-                  <td>
-                    <span className={`role-badge ${user.role.toLowerCase()}`}>
-                      {user.role}
-                    </span>
-                  </td>
-                  <td>
-                    <span className={`status-badge ${user.is_active ? 'active' : 'inactive'}`}>
-                      {user.is_active ? 'Active' : 'Inactive'}
-                    </span>
-                  </td>
-                  <td>{formatDate(user.created_date)}</td>
-                  <td>
-                    <button 
-                      className="btn btn-sm btn-secondary"
-                      onClick={() => editUser(user)}
-                    >
-                      Edit
-                    </button>
-                    <button 
-                      className={`btn btn-sm ${user.is_active ? 'btn-danger' : 'btn-success'}`}
-                      onClick={() => handleToggleActive(user)}
-                      disabled={user.username === currentUser?.username}
-                    >
-                      {user.is_active ? 'Deactivate' : 'Activate'}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+            ))}
+          </tbody>
+        </table>
+      </div>
 
       {showForm && (
-        <div className="modal-overlay" onClick={() => setShowForm(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
+        <div className="modal-overlay">
+          <div className="modal-content">
             <h2>{editingUser ? 'Edit User' : 'Add New User'}</h2>
             <form onSubmit={handleSubmit}>
               <div className="form-group">
-                <label>Username</label>
+                <label>Username*</label>
                 <input
                   type="text"
                   value={formData.username}
@@ -209,7 +209,7 @@ const Users = () => {
               </div>
 
               <div className="form-group">
-                <label>Password {editingUser && '(leave blank to keep current)'}</label>
+                <label>Password{editingUser ? ' (leave blank to keep current)' : '*'}</label>
                 <input
                   type="password"
                   value={formData.password}
@@ -219,7 +219,7 @@ const Users = () => {
               </div>
 
               <div className="form-group">
-                <label>First Name</label>
+                <label>First Name*</label>
                 <input
                   type="text"
                   value={formData.first_name}
@@ -229,7 +229,7 @@ const Users = () => {
               </div>
 
               <div className="form-group">
-                <label>Last Name</label>
+                <label>Last Name*</label>
                 <input
                   type="text"
                   value={formData.last_name}
@@ -239,13 +239,16 @@ const Users = () => {
               </div>
 
               <div className="form-group">
-                <label>Role</label>
+                <label>Role*</label>
                 <select
                   value={formData.role}
                   onChange={(e) => setFormData({...formData, role: e.target.value})}
+                  required
                 >
                   <option value="User">User</option>
                   <option value="Admin">Admin</option>
+                  <option value="Kitchen">Kitchen</option>
+                  <option value="Dietary">Dietary</option>
                 </select>
               </div>
 
@@ -253,7 +256,14 @@ const Users = () => {
                 <button type="submit" className="btn btn-primary">
                   {editingUser ? 'Update' : 'Create'}
                 </button>
-                <button type="button" className="btn btn-secondary" onClick={() => setShowForm(false)}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    setShowForm(false);
+                    resetForm();
+                  }}
+                >
                   Cancel
                 </button>
               </div>

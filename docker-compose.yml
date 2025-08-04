@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   postgres:
     image: postgres:15-alpine
@@ -6,25 +8,25 @@ services:
       POSTGRES_USER: dietary_user
       POSTGRES_PASSWORD: ${DB_PASSWORD:-DietarySecurePass2024!}
       POSTGRES_DB: dietary_db
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
       - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U dietary_user -d dietary_db"]
       interval: 10s
       timeout: 5s
       retries: 5
-    restart: unless-stopped
     networks:
       - dietary_net
+    restart: unless-stopped
 
   backend:
-    build: 
+    build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: dietary_backend
+    command: ["sh", "/app/start.sh"]
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
@@ -34,42 +36,36 @@ services:
       JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-this}
       NODE_ENV: production
       PORT: 3000
-    volumes:
-      - ./backend/routes:/app/routes:ro
-      - ./backend/config:/app/config:ro
-      - ./backend/middleware:/app/middleware:ro
-      - ./backend/server.js:/app/server.js:ro
-      - ./backups:/backups
-      - /opt/dietarydb/backups/databases:/db_backup
     ports:
       - "3000:3000"
+    volumes:
+      - ./backend:/app
+      - /opt/dietarydb/backups/databases:/db_backup
     depends_on:
       postgres:
         condition: service_healthy
-    restart: unless-stopped
     networks:
       - dietary_net
+    restart: unless-stopped
 
   admin-frontend:
-    build: 
+    build:
       context: ./admin-frontend
       dockerfile: Dockerfile
+      args:
+        - REBUILD_DATE=${REBUILD_DATE:-default}
     container_name: dietary_admin
     environment:
-      - CHOKIDAR_USEPOLLING=true
-      - REACT_APP_API_URL=http://localhost:3000
-    volumes:
-      - ./admin-frontend/src:/app/src
-      - ./admin-frontend/public:/app/public
+      - NODE_ENV=production
     ports:
       - "3001:80"
     depends_on:
       - backend
+    networks:
+      - dietary_net
     restart: unless-stopped
     stdin_open: true
     tty: true
-    networks:
-      - dietary_net
 
 volumes:
   postgres_data:

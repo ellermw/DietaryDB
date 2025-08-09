@@ -2,22 +2,33 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-# Install PostgreSQL client for backups
-RUN apk add --no-cache postgresql-client
-
-# Copy package files first
+# Copy package files
 COPY package*.json ./
 
-# Install all dependencies
-RUN npm ci || npm install
+# Install ALL required dependencies
+RUN npm install express@4.18.2 \
+    cors@2.8.5 \
+    helmet@7.0.0 \
+    morgan@1.10.0 \
+    compression@1.7.4 \
+    dotenv@16.0.3 \
+    pg@8.10.0 \
+    bcryptjs@2.4.3 \
+    jsonwebtoken@9.0.0 \
+    node-cron@3.0.2 \
+    child_process \
+    && npm cache clean --force
 
-# Copy all application files
+# Copy application files
 COPY . .
 
-# Ensure node_modules permissions are correct
-RUN chmod -R 755 node_modules
+# Create non-root user
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001 && \
+    chown -R nodejs:nodejs /app
+
+USER nodejs
 
 EXPOSE 3000
 
-# Run as node user (default in node:18-alpine)
 CMD ["node", "server.js"]

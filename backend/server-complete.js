@@ -6,6 +6,7 @@ const compression = require('compression');
 const bcryptjs = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { Pool } = require('pg');
+const { exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
@@ -25,7 +26,7 @@ const pool = new Pool({
   connectionTimeoutMillis: 5000,
 });
 
-// CORS configuration
+// Middleware
 app.use(cors({
   origin: true,
   credentials: true,
@@ -33,7 +34,6 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept']
 }));
 
-// Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(compression());
@@ -42,12 +42,6 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false
 }));
 app.use(morgan('combined'));
-
-// Request logging
-app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
-  next();
-});
 
 // JWT configuration
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
@@ -93,6 +87,7 @@ app.post('/api/auth/login', async (req, res) => {
         { expiresIn: '24h' }
       );
       
+      // Update last login
       await pool.query(
         'UPDATE users SET last_login = NOW() WHERE username = $1',
         [username]
@@ -169,7 +164,7 @@ app.get('/api/auth/me', authenticateToken, (req, res) => {
   });
 });
 
-// ==================== DASHBOARD ====================
+// ==================== DASHBOARD ROUTES ====================
 app.get('/api/dashboard', authenticateToken, async (req, res) => {
   const stats = {
     totalItems: 0,
@@ -180,15 +175,23 @@ app.get('/api/dashboard', authenticateToken, async (req, res) => {
   };
   
   try {
-    const [items, users, categories] = await Promise.all([
+    const [items, users, categories, orders] = await Promise.all([
       pool.query('SELECT COUNT(*) FROM items WHERE is_active = true'),
       pool.query('SELECT COUNT(*) FROM users WHERE is_active = true'),
-      pool.query('SELECT COUNT(DISTINCT category) FROM items')
+      pool.query('SELECT COUNT(DISTINCT category) FROM items'),
+      pool.query('SELECT COUNT(*) FROM orders').catch(() => ({ rows: [{ count: 0 }] }))
     ]);
     
     stats.totalItems = parseInt(items.rows[0].count);
     stats.totalUsers = parseInt(users.rows[0].count);
     stats.totalCategories = parseInt(categories.rows[0].count);
+    stats.totalOrders = parseInt(orders.rows[0].count);
+    
+    const activity = await pool.query(
+      'SELECT * FROM activity_logs ORDER BY timestamp DESC LIMIT 5'
+    ).catch(() => ({ rows: [] }));
+    
+    stats.recentActivity = activity.rows;
   } catch (error) {
     console.error('Dashboard error:', error);
   }
@@ -196,7 +199,7 @@ app.get('/api/dashboard', authenticateToken, async (req, res) => {
   res.json(stats);
 });
 
-// ==================== ITEMS ====================
+// ==================== ITEMS ROUTES ====================
 app.get('/api/items', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(
@@ -218,6 +221,15 @@ app.post('/api/items', authenticateToken, async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, $6, $7, true)
        RETURNING *`,
       [name, category, calories || 0, sodium_mg || 0, carbs_g || 0, fluid_ml || 0, is_ada_friendly || false]
+    );
+    
+    // Update category count
+    await pool.query(
+      `INSERT INTO categories (name, item_count) 
+       VALUES ($1, 1) 
+       ON CONFLICT (name) 
+       DO UPDATE SET item_count = categories.item_count + 1`,
+      [category]
     );
     
     res.status(201).json(result.rows[0]);
@@ -254,11 +266,19 @@ app.put('/api/items/:id', authenticateToken, async (req, res) => {
 app.delete('/api/items/:id', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(
-      'UPDATE items SET is_active = false WHERE item_id = $1 RETURNING name',
+      'UPDATE items SET is_active = false WHERE item_id = $1 RETURNING name, category',
       [req.params.id]
     );
     
     if (result.rows.length > 0) {
+      // Update category count
+      await pool.query(
+        `UPDATE categories 
+         SET item_count = GREATEST(0, item_count - 1) 
+         WHERE name = $1`,
+        [result.rows[0].category]
+      );
+      
       res.json({ message: 'Item deleted successfully' });
     } else {
       res.status(404).json({ message: 'Item not found' });
@@ -269,8 +289,7 @@ app.delete('/api/items/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// ==================== CATEGORIES ====================
-// Basic categories list
+// ==================== CATEGORIES ROUTES ====================
 app.get('/api/items/categories', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(
@@ -284,9 +303,8 @@ app.get('/api/items/categories', authenticateToken, async (req, res) => {
   }
 });
 
-// Categories with item counts
+// Get categories with item counts
 app.get('/api/categories/detailed', authenticateToken, async (req, res) => {
-  console.log('GET /api/categories/detailed');
   try {
     const result = await pool.query(`
       SELECT category as name, COUNT(*) as item_count 
@@ -295,7 +313,6 @@ app.get('/api/categories/detailed', authenticateToken, async (req, res) => {
       GROUP BY category 
       ORDER BY category
     `);
-    console.log('Categories with counts:', result.rows);
     res.json(result.rows);
   } catch (error) {
     console.error('Error fetching detailed categories:', error);
@@ -305,7 +322,6 @@ app.get('/api/categories/detailed', authenticateToken, async (req, res) => {
 
 // Add new category
 app.post('/api/categories', authenticateToken, async (req, res) => {
-  console.log('POST /api/categories:', req.body);
   const { name } = req.body;
   
   if (!name || name.trim() === '') {
@@ -313,17 +329,6 @@ app.post('/api/categories', authenticateToken, async (req, res) => {
   }
   
   try {
-    // Create categories table if needed
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS categories (
-        category_id SERIAL PRIMARY KEY,
-        name VARCHAR(100) UNIQUE NOT NULL,
-        item_count INTEGER DEFAULT 0,
-        created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `).catch(() => {});
-    
-    // Insert category
     await pool.query(
       'INSERT INTO categories (name, item_count) VALUES ($1, 0) ON CONFLICT (name) DO NOTHING',
       [name.trim()]
@@ -336,10 +341,9 @@ app.post('/api/categories', authenticateToken, async (req, res) => {
   }
 });
 
-// Delete category
+// Delete category (only if no items)
 app.delete('/api/categories/:name', authenticateToken, async (req, res) => {
   const categoryName = decodeURIComponent(req.params.name);
-  console.log('DELETE /api/categories/' + categoryName);
   
   try {
     // Check if category has items
@@ -348,15 +352,14 @@ app.delete('/api/categories/:name', authenticateToken, async (req, res) => {
       [categoryName]
     );
     
-    const itemCount = parseInt(itemCheck.rows[0].count);
-    if (itemCount > 0) {
+    if (parseInt(itemCheck.rows[0].count) > 0) {
       return res.status(400).json({ 
-        message: `Cannot delete category "${categoryName}" - it has ${itemCount} active items` 
+        message: `Cannot delete category "${categoryName}" - it has ${itemCheck.rows[0].count} active items` 
       });
     }
     
-    // Delete category
-    await pool.query('DELETE FROM categories WHERE name = $1', [categoryName]).catch(() => {});
+    // Delete from categories table
+    await pool.query('DELETE FROM categories WHERE name = $1', [categoryName]);
     
     res.json({ message: 'Category deleted successfully' });
   } catch (error) {
@@ -365,7 +368,7 @@ app.delete('/api/categories/:name', authenticateToken, async (req, res) => {
   }
 });
 
-// ==================== USERS ====================
+// ==================== USERS ROUTES ====================
 app.get('/api/users', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(
@@ -405,8 +408,29 @@ app.post('/api/users', authenticateToken, async (req, res) => {
   }
 });
 
+// Soft delete (deactivate) user
+app.patch('/api/users/:id/deactivate', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'UPDATE users SET is_active = false WHERE user_id = $1 RETURNING username',
+      [req.params.id]
+    );
+    
+    if (result.rows.length > 0) {
+      res.json({ message: 'User deactivated successfully' });
+    } else {
+      res.status(404).json({ message: 'User not found' });
+    }
+  } catch (error) {
+    console.error('Error deactivating user:', error);
+    res.status(500).json({ message: 'Error deactivating user' });
+  }
+});
+
+// Hard delete user (permanent)
 app.delete('/api/users/:id', authenticateToken, async (req, res) => {
   try {
+    // Don't allow deleting admin user
     if (req.params.id === '1') {
       return res.status(400).json({ message: 'Cannot delete admin user' });
     }
@@ -427,64 +451,91 @@ app.delete('/api/users/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// ==================== TASKS/DATABASE STATS ====================
+// ==================== TASKS/SYSTEM ROUTES ====================
 app.get('/api/tasks/database/stats', authenticateToken, async (req, res) => {
-  console.log('GET /api/tasks/database/stats');
   const stats = {
-    databaseSize: '0 MB',
-    totalTables: 0,
     totalRecords: 0,
-    lastCheck: new Date().toISOString()
+    lastBackup: 'Never',
+    databaseSize: '0 MB',
+    activeConnections: 0
   };
   
   try {
+    // Get total records
+    const counts = await Promise.all([
+      pool.query('SELECT COUNT(*) FROM items'),
+      pool.query('SELECT COUNT(*) FROM users'),
+      pool.query('SELECT COUNT(*) FROM patients'),
+      pool.query('SELECT COUNT(*) FROM orders').catch(() => ({ rows: [{ count: 0 }] }))
+    ]);
+    
+    stats.totalRecords = counts.reduce((sum, result) => sum + parseInt(result.rows[0].count), 0);
+    
     // Get database size
     const sizeResult = await pool.query(
       "SELECT pg_database_size('dietary_db') as size"
     );
+    
     stats.databaseSize = `${(parseInt(sizeResult.rows[0].size) / 1024 / 1024).toFixed(2)} MB`;
     
-    // Get table count
-    const tableResult = await pool.query(
-      "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public'"
+    // Get connection count
+    const connResult = await pool.query(
+      "SELECT count(*) FROM pg_stat_activity WHERE datname = 'dietary_db'"
     );
-    stats.totalTables = parseInt(tableResult.rows[0].count);
     
-    // Get total records
-    const counts = await Promise.all([
-      pool.query('SELECT COUNT(*) FROM items').catch(() => ({ rows: [{ count: 0 }] })),
-      pool.query('SELECT COUNT(*) FROM users').catch(() => ({ rows: [{ count: 0 }] })),
-      pool.query('SELECT COUNT(*) FROM patients').catch(() => ({ rows: [{ count: 0 }] }))
-    ]);
+    stats.activeConnections = parseInt(connResult.rows[0].count);
     
-    stats.totalRecords = counts.reduce((sum, result) => sum + parseInt(result.rows[0].count || 0), 0);
+    // Get last backup info
+    const backupResult = await pool.query(
+      "SELECT setting_value FROM system_settings WHERE setting_key = 'last_backup'"
+    ).catch(() => ({ rows: [{ setting_value: 'Never' }] }));
     
-    console.log('Database stats:', stats);
-    res.json(stats);
+    if (backupResult.rows.length > 0) {
+      stats.lastBackup = backupResult.rows[0].setting_value;
+    }
   } catch (error) {
     console.error('Error getting database stats:', error);
-    res.json(stats);
   }
+  
+  res.json(stats);
 });
 
-// Database maintenance
+// Schedule maintenance
 app.post('/api/tasks/database/maintenance', authenticateToken, async (req, res) => {
-  console.log('POST /api/tasks/database/maintenance');
   const { schedule, day, time } = req.body;
   
   try {
-    // Save settings
-    if (schedule) {
+    await pool.query(
+      `INSERT INTO system_settings (setting_key, setting_value) 
+       VALUES ('maintenance_schedule', $1)
+       ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value`,
+      [schedule]
+    );
+    
+    if (day) {
       await pool.query(
         `INSERT INTO system_settings (setting_key, setting_value) 
-         VALUES ('maintenance_schedule', $1)
+         VALUES ('maintenance_day', $1)
          ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value`,
-        [schedule]
+        [day]
       );
     }
     
+    if (time) {
+      await pool.query(
+        `INSERT INTO system_settings (setting_key, setting_value) 
+         VALUES ('maintenance_time', $1)
+         ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value`,
+        [time]
+      );
+    }
+    
+    // Run maintenance now
+    await pool.query('VACUUM ANALYZE;').catch(() => {});
+    await pool.query('REINDEX DATABASE dietary_db;').catch(() => {});
+    
     res.json({ 
-      message: 'Maintenance scheduled successfully',
+      message: 'Maintenance scheduled and executed successfully',
       schedule, day, time 
     });
   } catch (error) {
@@ -495,9 +546,17 @@ app.post('/api/tasks/database/maintenance', authenticateToken, async (req, res) 
 
 // Run maintenance now
 app.post('/api/tasks/database/maintenance/run', authenticateToken, async (req, res) => {
-  console.log('POST /api/tasks/database/maintenance/run');
   try {
-    await pool.query('VACUUM').catch(err => console.log('Vacuum error:', err.message));
+    // Run vacuum
+    await pool.query('VACUUM ANALYZE;');
+    
+    // Update last maintenance time
+    await pool.query(
+      `INSERT INTO system_settings (setting_key, setting_value) 
+       VALUES ('last_maintenance', $1)
+       ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value`,
+      [new Date().toISOString()]
+    );
     
     res.json({ 
       message: 'Database maintenance completed successfully',
@@ -511,21 +570,43 @@ app.post('/api/tasks/database/maintenance/run', authenticateToken, async (req, r
 
 // Create backup
 app.post('/api/tasks/backup/create', authenticateToken, async (req, res) => {
-  console.log('POST /api/tasks/backup/create');
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const filename = `backup-${timestamp}.sql`;
+  const backupPath = `/app/backups/${filename}`;
   
   try {
-    await pool.query(
-      `INSERT INTO system_settings (setting_key, setting_value) 
-       VALUES ('last_backup', $1)
-       ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value`,
-      [new Date().toISOString()]
-    );
+    // Create backups directory if it doesn't exist
+    if (!fs.existsSync('/app/backups')) {
+      fs.mkdirSync('/app/backups', { recursive: true });
+    }
     
-    res.json({ 
-      message: 'Backup created successfully',
-      filename: `backup-${timestamp}.sql`,
-      timestamp: new Date().toISOString()
+    // Run pg_dump
+    const command = `PGPASSWORD="${process.env.DB_PASSWORD || 'DietarySecurePass2024!'}" pg_dump -h ${process.env.DB_HOST || 'postgres'} -U ${process.env.DB_USER || 'dietary_user'} -d ${process.env.DB_NAME || 'dietary_db'} > ${backupPath}`;
+    
+    exec(command, async (error, stdout, stderr) => {
+      if (error) {
+        console.error('Backup error:', error);
+        return res.status(500).json({ message: 'Error creating backup' });
+      }
+      
+      // Update last backup time
+      await pool.query(
+        `INSERT INTO system_settings (setting_key, setting_value) 
+         VALUES ('last_backup', $1)
+         ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value`,
+        [new Date().toISOString()]
+      );
+      
+      // Get file size
+      const stats = fs.statSync(backupPath);
+      const fileSizeInMB = (stats.size / 1024 / 1024).toFixed(2);
+      
+      res.json({ 
+        message: 'Backup created successfully',
+        filename,
+        size: `${fileSizeInMB} MB`,
+        timestamp: new Date().toISOString()
+      });
     });
   } catch (error) {
     console.error('Error creating backup:', error);
@@ -535,16 +616,22 @@ app.post('/api/tasks/backup/create', authenticateToken, async (req, res) => {
 
 // Schedule backup
 app.post('/api/tasks/backup/schedule', authenticateToken, async (req, res) => {
-  console.log('POST /api/tasks/backup/schedule');
   const { schedule, time } = req.body;
   
   try {
-    if (schedule) {
+    await pool.query(
+      `INSERT INTO system_settings (setting_key, setting_value) 
+       VALUES ('backup_schedule', $1)
+       ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value`,
+      [schedule]
+    );
+    
+    if (time) {
       await pool.query(
         `INSERT INTO system_settings (setting_key, setting_value) 
-         VALUES ('backup_schedule', $1)
+         VALUES ('backup_time', $1)
          ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value`,
-        [schedule]
+        [time]
       );
     }
     
@@ -555,6 +642,34 @@ app.post('/api/tasks/backup/schedule', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Error scheduling backup:', error);
     res.status(500).json({ message: 'Error scheduling backup' });
+  }
+});
+
+// List backups
+app.get('/api/tasks/backup/list', authenticateToken, async (req, res) => {
+  try {
+    const backupDir = '/app/backups';
+    
+    if (!fs.existsSync(backupDir)) {
+      return res.json([]);
+    }
+    
+    const files = fs.readdirSync(backupDir)
+      .filter(file => file.endsWith('.sql'))
+      .map(file => {
+        const stats = fs.statSync(path.join(backupDir, file));
+        return {
+          filename: file,
+          size: `${(stats.size / 1024 / 1024).toFixed(2)} MB`,
+          created: stats.birthtime
+        };
+      })
+      .sort((a, b) => b.created - a.created);
+    
+    res.json(files);
+  } catch (error) {
+    console.error('Error listing backups:', error);
+    res.json([]);
   }
 });
 
@@ -574,10 +689,16 @@ app.use((req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`
 ╔═══════════════════════════════════════════╗
-║       DietaryDB Backend Server             ║
-║       Running on port ${PORT}                 ║
-║       All routes loaded successfully       ║
+║       DietaryDB Backend Server            ║
+║       Running on port ${PORT}                ║
 ╚═══════════════════════════════════════════╝
+
+Available endpoints:
+- Categories: GET/POST /api/categories, DELETE /api/categories/:name
+- Tasks: GET /api/tasks/database/stats
+- Maintenance: POST /api/tasks/database/maintenance
+- Backup: POST /api/tasks/backup/create, GET /api/tasks/backup/list
+- Users: DELETE /api/users/:id (permanent delete)
   `);
   
   // Test database connection

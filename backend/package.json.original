@@ -4,7 +4,7 @@
   "description": "DietaryDB Backend",
   "main": "server.js",
   "scripts": {
-    "start": "node server-wrapper.js"
+    "start": "node server.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

@@ -250,3 +250,42 @@ router.delete('/:id', [
 });
 
 module.exports = router;
+
+// Categories endpoints
+router.get('/categories', authenticateToken, async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT category as name, COUNT(*) as item_count 
+       FROM items 
+       WHERE is_active = true AND category IS NOT NULL 
+       GROUP BY category 
+       ORDER BY category`
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Categories error:', error);
+    res.json([]);
+  }
+});
+
+router.post('/categories', [authenticateToken, authorizeRole('Admin')], async (req, res) => {
+  const { name } = req.body;
+  if (!name) {
+    return res.status(400).json({ message: 'Category name required' });
+  }
+  // Categories are implicit in items
+  res.json({ message: 'Category will be created when you add items', name: name });
+});
+
+router.delete('/categories/:name', [authenticateToken, authorizeRole('Admin')], async (req, res) => {
+  try {
+    // Set items in this category to 'Uncategorized'
+    await db.query(
+      `UPDATE items SET category = 'Uncategorized' WHERE category = $1`,
+      [req.params.name]
+    );
+    res.json({ message: 'Category removed' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error removing category' });
+  }
+});

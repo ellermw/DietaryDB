@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Login - DietaryDB</title>
+<style>
+body { 
+    font-family: Arial; 
+    display: flex; 
+    justify-content: center; 
+    align-items: center; 
+    height: 100vh; 
+    margin: 0;
+    background: #f0f0f0;
+}
+.box { 
+    background: white; 
+    padding: 40px; 
+    border-radius: 8px; 
+    box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    width: 300px;
+}
+h2 {
+    margin-top: 0;
+    text-align: center;
+}
+input, button { 
+    display: block; 
+    width: 100%; 
+    margin: 10px 0; 
+    padding: 12px;
+    font-size: 16px;
+    box-sizing: border-box;
+}
+button {
+    background: #4CAF50;
+    color: white;
+    border: none;
+    cursor: pointer;
+    border-radius: 4px;
+}
+button:hover {
+    background: #45a049;
+}
+#msg {
+    margin-top: 15px;
+    padding: 10px;
+    border-radius: 4px;
+    font-size: 14px;
+    display: none;
+}
+.error {
+    background: #ffebee;
+    color: #c62828;
+    border: 1px solid #ef5350;
+}
+.success {
+    background: #e8f5e9;
+    color: #2e7d32;
+    border: 1px solid #66bb6a;
+}
+.info {
+    text-align: center;
+    color: #666;
+    font-size: 14px;
+    margin-top: 20px;
+}
+</style>
+</head>
+<body>
+<div class="box">
+<h2>DietaryDB Login</h2>
+<input type="text" id="user" placeholder="Username" value="admin">
+<input type="password" id="pass" placeholder="Password" value="admin123">
+<button onclick="testLogin()">Login</button>
+<div id="msg"></div>
+<div class="info">Default: admin / admin123</div>
+<script>
+async function testLogin() {
+    const msgEl = document.getElementById("msg");
+    msgEl.className = "";
+    msgEl.style.display = "block";
+    msgEl.innerHTML = "Connecting...";
+    
+    try {
+        const response = await fetch("http://localhost:3000/api/auth/login", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            },
+            body: JSON.stringify({
+                username: document.getElementById("user").value,
+                password: document.getElementById("pass").value
+            })
+        });
+        
+        console.log("Response status:", response.status);
+        console.log("Response headers:", response.headers);
+        
+        const data = await response.json();
+        console.log("Response data:", data);
+        
+        if (data.token) {
+            msgEl.className = "success";
+            msgEl.innerHTML = "✓ Login successful!<br>Token: " + data.token.substring(0,20) + "...";
+            localStorage.setItem("token", data.token);
+            
+            // Redirect to dashboard after 2 seconds
+            setTimeout(() => {
+                window.location.href = "/dashboard.html";
+            }, 2000);
+        } else {
+            msgEl.className = "error";
+            msgEl.innerHTML = "✗ Login failed: " + (data.message || "Invalid credentials");
+        }
+    } catch (e) {
+        console.error("Login error:", e);
+        msgEl.className = "error";
+        msgEl.innerHTML = "✗ Connection error: " + e.message + "<br><br>Check browser console (F12) for details.";
+    }
+}
+
+// Test connection on page load
+window.onload = async function() {
+    try {
+        const response = await fetch("http://localhost:3000/health");
+        const data = await response.json();
+        console.log("Backend health check:", data);
+    } catch (e) {
+        console.error("Backend not reachable:", e);
+    }
+}
+</script>
+</div>
+</body>
+</html>

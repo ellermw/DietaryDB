@@ -1,97 +1,99 @@
 import React, { useState, useEffect } from 'react';
 import axios from '../utils/axios';
-import { useAuth } from '../contexts/AuthContext';
 import './Users.css';
 
 const Users = () => {
-  const { currentUser } = useAuth();
   const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [showForm, setShowForm] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
   const [formData, setFormData] = useState({
     username: '',
     password: '',
     first_name: '',
     last_name: '',
-    role: 'User'
+    role: 'User',
+    is_active: true
   });
 
-  const isAdmin = currentUser?.role === 'Admin';
-
   useEffect(() => {
-    fetchUsers();
+    loadUsers();
   }, []);
 
-  const fetchUsers = async () => {
+  const loadUsers = async () => {
     try {
-      setError(null);
       const response = await axios.get('/api/users');
       setUsers(response.data);
-      setLoading(false);
     } catch (error) {
-      console.error('Error fetching users:', error);
-      setError(error.response?.data?.message || 'Failed to load users');
-      setLoading(false);
+      console.error('Error loading users:', error);
     }
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleAddUser = async () => {
     try {
-      if (editingUser) {
-        await axios.put(`/api/users/${editingUser.user_id}`, formData);
-      } else {
-        await axios.post('/api/users', formData);
-      }
-      
-      setShowForm(false);
+      await axios.post('/api/users', formData);
+      loadUsers();
+      setShowAddModal(false);
       resetForm();
-      fetchUsers();
     } catch (error) {
-      alert('Error saving user: ' + (error.response?.data?.message || error.message));
+      alert('Error adding user');
     }
   };
 
-  const handleDelete = async (user) => {
-    if (user.username === 'admin') {
-      alert('Cannot delete the system admin user');
+  const handleEditUser = async () => {
+    try {
+      const updateData = {...formData};
+      if (!updateData.password) {
+        delete updateData.password; // Don't update password if empty
+      }
+      await axios.put(`/api/users/${editingUser.user_id}`, updateData);
+      loadUsers();
+      setShowEditModal(false);
+      resetForm();
+    } catch (error) {
+      alert('Error updating user');
+    }
+  };
+
+  const handleDeleteUser = async (id, username) => {
+    if (username === 'admin') {
+      alert('Cannot delete the admin user');
       return;
     }
     
-    if (window.confirm(`Are you sure you want to permanently delete user "${user.username}"?`)) {
+    if (window.confirm(`Are you sure you want to delete user "${username}"?`)) {
       try {
-        await axios.delete(`/api/users/${user.user_id}`);
-        alert('User deleted successfully');
-        fetchUsers();
+        await axios.delete(`/api/users/${id}`);
+        loadUsers();
       } catch (error) {
-        alert('Error deleting user: ' + (error.response?.data?.message || error.message));
+        alert('Error deleting user');
       }
     }
   };
 
-  const handleToggleActive = async (user) => {
+  const toggleUserStatus = async (user) => {
     try {
       await axios.put(`/api/users/${user.user_id}`, {
+        ...user,
         is_active: !user.is_active
       });
-      fetchUsers();
+      loadUsers();
     } catch (error) {
       alert('Error updating user status');
     }
   };
 
-  const editUser = (user) => {
+  const openEditModal = (user) => {
     setEditingUser(user);
     setFormData({
       username: user.username,
-      password: '',
-      first_name: user.first_name || '',
-      last_name: user.last_name || '',
-      role: user.role
+      password: '', // Don't show existing password
+      first_name: user.first_name,
+      last_name: user.last_name,
+      role: user.role,
+      is_active: user.is_active
     });
-    setShowForm(true);
+    setShowEditModal(true);
   };
 
   const resetForm = () => {
@@ -100,174 +102,144 @@ const Users = () => {
       password: '',
       first_name: '',
       last_name: '',
-      role: 'User'
+      role: 'User',
+      is_active: true
     });
     setEditingUser(null);
   };
-
-  const formatDate = (dateString) => {
-    if (!dateString) return 'Never';
-    return new Date(dateString).toLocaleString();
-  };
-
-  if (loading) return <div className="loading">Loading users...</div>;
-  if (error) return <div className="error-message">{error}</div>;
 
   return (
     <div className="users-page">
       <div className="page-header">
         <h1>User Management</h1>
-        {isAdmin && (
-          <button
-            className="btn btn-primary"
-            onClick={() => {
-              resetForm();
-              setShowForm(true);
-            }}
-          >
-            Add New User
-          </button>
-        )}
+        <button onClick={() => setShowAddModal(true)} className="btn btn-primary">
+          Add New User
+        </button>
       </div>
-
-      <div className="users-table-container">
-        <table className="users-table">
+      
+      <div className="users-table">
+        <table>
           <thead>
             <tr>
               <th>Username</th>
-              <th>First Name</th>
-              <th>Last Name</th>
+              <th>Name</th>
               <th>Role</th>
               <th>Status</th>
-              <th>Created</th>
-              {isAdmin && <th>Actions</th>}
+              <th>Last Login</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {users.map(user => (
               <tr key={user.user_id}>
                 <td>{user.username}</td>
-                <td>{user.first_name}</td>
-                <td>{user.last_name}</td>
+                <td>{user.first_name} {user.last_name}</td>
+                <td><span className={`role ${user.role.toLowerCase()}`}>{user.role}</span></td>
                 <td>
-                  <span className={`role-badge role-${user.role.toLowerCase()}`}>
-                    {user.role}
-                  </span>
-                </td>
-                <td>
-                  <span className={`status-badge ${user.is_active ? 'active' : 'inactive'}`}>
+                  <span className={`status ${user.is_active ? 'active' : 'inactive'}`}>
                     {user.is_active ? 'Active' : 'Inactive'}
                   </span>
                 </td>
-                <td>{formatDate(user.created_date)}</td>
-                {isAdmin && (
-                  <td>
-                    <div className="action-buttons">
-                      <button
-                        className="btn btn-sm btn-info"
-                        onClick={() => editUser(user)}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        className="btn btn-sm btn-warning"
-                        onClick={() => handleToggleActive(user)}
-                      >
-                        {user.is_active ? 'Deactivate' : 'Activate'}
-                      </button>
-                      {user.username !== 'admin' && (
-                        <button
-                          className="btn btn-sm btn-danger"
-                          onClick={() => handleDelete(user)}
-                        >
-                          Delete
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                )}
+                <td>{user.last_login ? new Date(user.last_login).toLocaleDateString() : 'Never'}</td>
+                <td>
+                  <button onClick={() => openEditModal(user)} className="btn-small btn-edit">Edit</button>
+                  <button onClick={() => toggleUserStatus(user)} className="btn-small btn-status">
+                    {user.is_active ? 'Deactivate' : 'Activate'}
+                  </button>
+                  {user.username !== 'admin' && (
+                    <button onClick={() => handleDeleteUser(user.user_id, user.username)} className="btn-small btn-delete">Delete</button>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
-      {showForm && (
+      {/* Add User Modal */}
+      {showAddModal && (
         <div className="modal-overlay">
-          <div className="modal-content">
-            <h2>{editingUser ? 'Edit User' : 'Add New User'}</h2>
-            <form onSubmit={handleSubmit}>
-              <div className="form-group">
-                <label>Username*</label>
-                <input
-                  type="text"
-                  value={formData.username}
-                  onChange={(e) => setFormData({...formData, username: e.target.value})}
-                  required
-                  disabled={editingUser}
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Password{editingUser ? ' (leave blank to keep current)' : '*'}</label>
-                <input
-                  type="password"
-                  value={formData.password}
-                  onChange={(e) => setFormData({...formData, password: e.target.value})}
-                  required={!editingUser}
-                />
-              </div>
-
+          <div className="modal">
+            <h2>Add New User</h2>
+            <div className="form-group">
+              <label>Username*</label>
+              <input type="text" value={formData.username} onChange={(e) => setFormData({...formData, username: e.target.value})} />
+            </div>
+            <div className="form-group">
+              <label>Password*</label>
+              <input type="password" value={formData.password} onChange={(e) => setFormData({...formData, password: e.target.value})} />
+            </div>
+            <div className="form-row">
               <div className="form-group">
                 <label>First Name*</label>
-                <input
-                  type="text"
-                  value={formData.first_name}
-                  onChange={(e) => setFormData({...formData, first_name: e.target.value})}
-                  required
-                />
+                <input type="text" value={formData.first_name} onChange={(e) => setFormData({...formData, first_name: e.target.value})} />
               </div>
-
               <div className="form-group">
                 <label>Last Name*</label>
-                <input
-                  type="text"
-                  value={formData.last_name}
-                  onChange={(e) => setFormData({...formData, last_name: e.target.value})}
-                  required
-                />
+                <input type="text" value={formData.last_name} onChange={(e) => setFormData({...formData, last_name: e.target.value})} />
               </div>
+            </div>
+            <div className="form-group">
+              <label>Role</label>
+              <select value={formData.role} onChange={(e) => setFormData({...formData, role: e.target.value})}>
+                <option value="User">User</option>
+                <option value="Admin">Admin</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label>
+                <input type="checkbox" checked={formData.is_active} onChange={(e) => setFormData({...formData, is_active: e.target.checked})} />
+                Active
+              </label>
+            </div>
+            <div className="modal-actions">
+              <button onClick={() => {setShowAddModal(false); resetForm()}} className="btn btn-secondary">Cancel</button>
+              <button onClick={handleAddUser} className="btn btn-primary">Add User</button>
+            </div>
+          </div>
+        </div>
+      )}
 
+      {/* Edit User Modal */}
+      {showEditModal && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <h2>Edit User</h2>
+            <div className="form-group">
+              <label>Username</label>
+              <input type="text" value={formData.username} disabled />
+            </div>
+            <div className="form-group">
+              <label>Password (leave blank to keep current)</label>
+              <input type="password" value={formData.password} onChange={(e) => setFormData({...formData, password: e.target.value})} />
+            </div>
+            <div className="form-row">
               <div className="form-group">
-                <label>Role*</label>
-                <select
-                  value={formData.role}
-                  onChange={(e) => setFormData({...formData, role: e.target.value})}
-                  required
-                >
-                  <option value="User">User</option>
-                  <option value="Admin">Admin</option>
-                  <option value="Kitchen">Kitchen</option>
-                  <option value="Dietary">Dietary</option>
-                </select>
+                <label>First Name*</label>
+                <input type="text" value={formData.first_name} onChange={(e) => setFormData({...formData, first_name: e.target.value})} />
               </div>
-
-              <div className="form-actions">
-                <button type="submit" className="btn btn-primary">
-                  {editingUser ? 'Update' : 'Create'}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => {
-                    setShowForm(false);
-                    resetForm();
-                  }}
-                >
-                  Cancel
-                </button>
+              <div className="form-group">
+                <label>Last Name*</label>
+                <input type="text" value={formData.last_name} onChange={(e) => setFormData({...formData, last_name: e.target.value})} />
               </div>
-            </form>
+            </div>
+            <div className="form-group">
+              <label>Role</label>
+              <select value={formData.role} onChange={(e) => setFormData({...formData, role: e.target.value})}>
+                <option value="User">User</option>
+                <option value="Admin">Admin</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label>
+                <input type="checkbox" checked={formData.is_active} onChange={(e) => setFormData({...formData, is_active: e.target.checked})} />
+                Active
+              </label>
+            </div>
+            <div className="modal-actions">
+              <button onClick={() => {setShowEditModal(false); resetForm()}} className="btn btn-secondary">Cancel</button>
+              <button onClick={handleEditUser} className="btn btn-primary">Save Changes</button>
+            </div>
           </div>
         </div>
       )}

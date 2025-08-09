@@ -1,32 +1,19 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import axios from '../utils/axios';
 
-const AuthContext = createContext({});
+const AuthContext = createContext();
 
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within AuthProvider');
-  }
-  return context;
-};
+export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
-  const [currentUser, setCurrentUser] = useState(null);
+  const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
-    const user = localStorage.getItem('user');
-    
-    if (token && user) {
-      try {
-        setCurrentUser(JSON.parse(user));
-      } catch (error) {
-        console.error('Error parsing user data:', error);
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-      }
+    if (token) {
+      // Verify token is still valid
+      setUser({ token });
     }
     setLoading(false);
   }, []);
@@ -35,34 +22,23 @@ export const AuthProvider = ({ children }) => {
     try {
       const response = await axios.post('/api/auth/login', { username, password });
       const { token, user } = response.data;
-      
       localStorage.setItem('token', token);
-      localStorage.setItem('user', JSON.stringify(user));
-      setCurrentUser(user);
-      
+      setUser(user);
       return { success: true };
     } catch (error) {
-      return { 
-        success: false, 
-        error: error.response?.data?.message || 'Login failed' 
-      };
+      return { success: false, error: error.response?.data?.message || 'Login failed' };
     }
   };
 
   const logout = () => {
     localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    setCurrentUser(null);
+    setUser(null);
+    window.location.href = '/';
   };
 
-  const value = {
-    currentUser,
-    login,
-    logout,
-    loading
-  };
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={{ user, login, logout, loading }}>
+      {children}
+    </AuthContext.Provider>
+  );
 };
-
-export default AuthContext;

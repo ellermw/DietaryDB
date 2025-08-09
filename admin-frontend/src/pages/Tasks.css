@@ -1,390 +1,135 @@
 .tasks-page {
-  padding: 24px;
-  max-width: 1200px;
-  margin: 0 auto;
-}
-
-.tasks-page h1 {
-  color: #2c3e50;
-  margin-bottom: 32px;
-  font-size: 28px;
-}
-
-.tasks-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 24px;
-  margin-bottom: 32px;
+  padding: 2rem;
 }
 
 .task-section {
   background: white;
-  border-radius: 12px;
-  padding: 24px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  padding: 2rem;
+  border-radius: 10px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  margin-top: 2rem;
 }
 
-.task-section h2 {
-  color: #2c3e50;
-  font-size: 20px;
-  margin-bottom: 20px;
-  padding-bottom: 12px;
-  border-bottom: 2px solid #ecf0f1;
+.db-stats p {
+  margin: 0.5rem 0;
+  padding: 0.5rem;
+  background: #f8f9fa;
+  border-radius: 5px;
+}
+
+.backup-section {
+  margin-top: 2rem;
+}
+
+.backup-btn {
+  background: #667eea;
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 5px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.3s;
+}
+
+.backup-btn:hover {
+  background: #5a67d8;
+}
+
+.backup-status {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background: #e8f5e9;
+  color: #2e7d32;
+  border-radius: 5px;
+}
+
+.task-section {
+  background: white;
+  padding: 2rem;
+  border-radius: 10px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  margin-bottom: 2rem;
 }
 
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
-  margin-bottom: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
 }
 
 .stat-item {
-  padding: 16px;
+  padding: 1rem;
   background: #f8f9fa;
-  border-radius: 8px;
-  border-left: 4px solid #3498db;
+  border-radius: 5px;
 }
 
-.stat-label {
-  font-size: 13px;
-  color: #7f8c8d;
-  margin-bottom: 4px;
-}
-
-.stat-value {
-  font-size: 24px;
+.stat-item label {
   font-weight: 600;
-  color: #2c3e50;
+  color: #666;
 }
 
-.database-size {
-  margin-top: 16px;
-  padding: 16px;
-  background: #fff3cd;
-  border-radius: 8px;
-  border-left: 4px solid #ffc107;
-}
-
-.maintenance-button {
-  width: 100%;
-  padding: 14px;
-  background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 16px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-}
-
-.maintenance-button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
-}
-
-.backup-section {
-  background: white;
-  border-radius: 12px;
-  padding: 24px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-.backup-actions {
-  margin-bottom: 24px;
-}
-
-.backup-button {
-  padding: 12px 24px;
-  background: linear-gradient(135deg, #27ae60 0%, #229954 100%);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 16px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-.backup-button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(39, 174, 96, 0.3);
-}
-
-.backup-button:disabled {
-  background: #95a5a6;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.schedule-section {
-  margin: 24px 0;
-  padding: 20px;
-  background: #f8f9fa;
-  border-radius: 8px;
-}
-
-.schedule-section h3 {
-  margin-bottom: 16px;
-  color: #2c3e50;
-}
-
-.schedule-form {
-  display: grid;
-  gap: 16px;
-}
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.form-group label {
-  font-weight: 500;
-  color: #2c3e50;
-}
-
-.form-group select {
-  padding: 10px;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  font-size: 14px;
-}
-
-.checkbox-group {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.checkbox-group input[type="checkbox"] {
-  width: 20px;
-  height: 20px;
-  cursor: pointer;
-}
-
-.save-button {
-  padding: 10px 20px;
-  background: #3498db;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.save-button:hover {
-  background: #2980b9;
-}
-
-.backups-list {
-  margin-top: 24px;
-}
-
-.backups-list h3 {
-  margin-bottom: 16px;
-  color: #2c3e50;
-}
-
-.no-backups {
-  text-align: center;
-  padding: 40px;
-  color: #7f8c8d;
-  font-style: italic;
-}
-
-.backup-item {
-  padding: 16px;
-  background: #f8f9fa;
-  border-radius: 8px;
-  margin-bottom: 12px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  transition: all 0.2s;
-}
-
-.backup-item:hover {
-  background: #ecf0f1;
-}
-
-.backup-info h4 {
-  margin: 0 0 4px 0;
-  color: #2c3e50;
-  font-size: 16px;
-}
-
-.backup-meta {
-  display: flex;
-  gap: 16px;
-  font-size: 13px;
-  color: #7f8c8d;
-}
-
-.backup-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.btn-sm {
-  padding: 6px 12px;
-  border: none;
-  border-radius: 4px;
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-primary {
-  background: #3498db;
-  color: white;
-}
-
-.btn-primary:hover {
-  background: #2980b9;
-}
-
-.btn-danger {
-  background: #e74c3c;
-  color: white;
-}
-
-.btn-danger:hover {
-  background: #c0392b;
-}
-
-.loading {
-  text-align: center;
-  padding: 40px;
-  color: #7f8c8d;
-}
-
-.error-message {
-  background: #fee;
-  color: #c33;
-  padding: 16px;
-  border-radius: 8px;
-  margin-bottom: 20px;
-  border: 1px solid #fcc;
-}
-
-.success-message {
-  background: #d4edda;
-  color: #155724;
-  padding: 16px;
-  border-radius: 8px;
-  margin-bottom: 20px;
-  border: 1px solid #c3e6cb;
-}
-
-@media (max-width: 768px) {
-  .tasks-grid {
-    grid-template-columns: 1fr;
-  }
-  
-  .stats-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* Backup Actions */
-.backup-actions-cell {
-  display: flex;
-  gap: 5px;
-  flex-wrap: wrap;
-}
-
-.backup-actions {
-  margin-bottom: 20px;
-}
-
-.btn-warning {
-  background-color: #ffc107;
-  color: #212529;
-}
-
-.btn-warning:hover {
-  background-color: #e0a800;
-}
-
-/* Maintenance Section Improvements */
-.maintenance-section {
-  background: white;
-  border-radius: 8px;
-  padding: 2rem;
-  margin-bottom: 2rem;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-}
-
-.maintenance-info {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin: 1.5rem 0;
-  padding: 1.5rem;
-  background: #f8f9fa;
-  border-radius: 6px;
-}
-
-.maintenance-status {
-  flex: 1;
-}
-
-.status-item {
-  display: flex;
-  align-items: center;
-  margin-bottom: 0.5rem;
-}
-
-.status-label {
-  font-weight: 600;
-  color: #495057;
-  margin-right: 1rem;
-  min-width: 100px;
-}
-
-.status-value {
-  color: #212529;
-}
-
-.maintenance-actions {
-  display: flex;
-  gap: 1rem;
-}
-
-.help-text {
-  color: #6c757d;
-  font-size: 0.9rem;
+.stat-item span {
+  display: block;
+  font-size: 1.5rem;
+  color: #333;
   margin-top: 0.5rem;
 }
 
-/* Form improvements */
-.form-group select {
-  width: 100%;
-  padding: 0.5rem;
-  border: 1px solid #ced4da;
-  border-radius: 4px;
-  font-size: 1rem;
+.config-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1rem;
+  margin: 1rem 0;
 }
 
-.form-group.checkbox {
+.config-item {
+  padding: 0.75rem;
+}
+
+.config-item label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+}
+
+.config-item input[type="time"],
+.config-item input[type="number"],
+.config-item select {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+}
+
+.config-actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.status-message {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background: #e8f5e9;
+  color: #2e7d32;
+  border-radius: 5px;
+}
+
+.backup-list {
+  margin-top: 2rem;
+}
+
+.backup-list table {
+  width: 100%;
   margin-top: 1rem;
 }
 
-.form-group.checkbox label {
-  display: flex;
-  align-items: center;
-  cursor: pointer;
-}
-
-.form-group.checkbox input[type="checkbox"] {
-  margin-right: 0.5rem;
+.maintenance-config,
+.backup-config {
+  border: 1px solid #eee;
+  padding: 1.5rem;
+  border-radius: 5px;
+  margin-bottom: 1.5rem;
 }

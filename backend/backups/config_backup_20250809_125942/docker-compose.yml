@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: dietary_postgres
+    environment:
+      POSTGRES_USER: dietary_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-DietarySecurePass2024!}
+      POSTGRES_DB: dietary_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dietary_user -d dietary_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - dietary_net
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: dietary_backend
+    command: ["sh", "/app/start.sh"]
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: dietary_db
+      DB_USER: dietary_user
+      DB_PASSWORD: ${DB_PASSWORD:-DietarySecurePass2024!}
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-this}
+      NODE_ENV: production
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./backend:/app
+      - /opt/dietarydb/backups/databases:/db_backup
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - dietary_net
+    restart: unless-stopped
+
+  admin-frontend:
+    build:
+      context: ./admin-frontend
+      dockerfile: Dockerfile
+      args:
+        - REBUILD_DATE=${REBUILD_DATE:-default}
+    container_name: dietary_admin
+    environment:
+      - NODE_ENV=production
+    ports:
+      - "3001:80"
+    depends_on:
+      - backend
+    networks:
+      - dietary_net
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  dietary_net:
+    driver: bridge

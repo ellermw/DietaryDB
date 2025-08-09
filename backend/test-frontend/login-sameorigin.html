@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Login - DietaryDB</title>
+<style>
+body { 
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    display: flex; 
+    justify-content: center; 
+    align-items: center; 
+    height: 100vh; 
+    margin: 0;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+.box { 
+    background: white; 
+    padding: 40px; 
+    border-radius: 12px; 
+    box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+    width: 350px;
+}
+h2 {
+    margin: 0 0 30px 0;
+    text-align: center;
+    color: #2c3e50;
+}
+input, button { 
+    display: block; 
+    width: 100%; 
+    margin: 15px 0; 
+    padding: 12px 15px;
+    font-size: 16px;
+    box-sizing: border-box;
+    border-radius: 6px;
+}
+input {
+    border: 2px solid #e1e8ed;
+    transition: border-color 0.3s;
+}
+input:focus {
+    outline: none;
+    border-color: #667eea;
+}
+button {
+    background: #667eea;
+    color: white;
+    border: none;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.3s;
+}
+button:hover {
+    background: #5a67d8;
+    transform: translateY(-1px);
+    box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+}
+#msg {
+    margin-top: 20px;
+    padding: 12px;
+    border-radius: 6px;
+    font-size: 14px;
+    text-align: center;
+}
+.error {
+    background: #fee;
+    color: #c62828;
+    border: 1px solid #ffcdd2;
+}
+.success {
+    background: #e8f5e9;
+    color: #2e7d32;
+    border: 1px solid #c8e6c9;
+}
+.info {
+    text-align: center;
+    color: #7f8c8d;
+    font-size: 14px;
+    margin-top: 20px;
+}
+</style>
+</head>
+<body>
+<div class="box">
+<h2>DietaryDB Admin Login</h2>
+<form onsubmit="doLogin(event)">
+    <input type="text" id="user" placeholder="Username" value="admin" required>
+    <input type="password" id="pass" placeholder="Password" value="admin123" required>
+    <button type="submit">Sign In</button>
+</form>
+<div id="msg" style="display: none;"></div>
+<div class="info">Secure Hospital Dietary Management</div>
+<script>
+async function doLogin(e) {
+    e.preventDefault();
+    
+    const msgEl = document.getElementById("msg");
+    msgEl.style.display = "block";
+    msgEl.className = "";
+    msgEl.innerHTML = "Signing in...";
+    
+    try {
+        const response = await fetch("/api/auth/login", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                username: document.getElementById("user").value,
+                password: document.getElementById("pass").value
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.token) {
+            msgEl.className = "success";
+            msgEl.innerHTML = "✓ Login successful! Redirecting...";
+            
+            // Save token and user data
+            localStorage.setItem("token", data.token);
+            localStorage.setItem("user", JSON.stringify(data.user || { username: document.getElementById("user").value }));
+            
+            // Redirect to dashboard
+            setTimeout(() => {
+                window.location.href = "/dashboard.html";
+            }, 1000);
+        } else {
+            msgEl.className = "error";
+            msgEl.innerHTML = "✗ " + (data.message || "Invalid credentials");
+        }
+    } catch (e) {
+        msgEl.className = "error";
+        msgEl.innerHTML = "✗ Connection error. Please try again.";
+        console.error("Login error:", e);
+    }
+}
+</script>
+</div>
+</body>
+</html>

@@ -1,276 +1,283 @@
 import React, { useState, useEffect } from 'react';
 import axios from '../utils/axios';
-import { useAuth } from '../contexts/AuthContext';
 import './Tasks.css';
 
 const Tasks = () => {
-  const { currentUser } = useAuth();
-  const [stats, setStats] = useState(null);
+  const [dbStats, setDbStats] = useState(null);
   const [backups, setBackups] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [maintenanceSchedule, setMaintenanceSchedule] = useState(null);
-  const [lastMaintenance, setLastMaintenance] = useState(null);
-  const [showScheduleModal, setShowScheduleModal] = useState(false);
-  const [scheduleForm, setScheduleForm] = useState({
-    cron_expression: '0 2 * * *',
-    is_active: true
+  const [backupConfig, setBackupConfig] = useState({
+    enabled: false,
+    schedule: 'daily',
+    time: '02:00',
+    retention: 7
   });
-  const [showProgress, setShowProgress] = useState(false);
-  const [progressTitle, setProgressTitle] = useState('');
-  const [progressLog, setProgressLog] = useState([]);
-  const [progressPercent, setProgressPercent] = useState(0);
-  const [backupError, setBackupError] = useState(null);
-
-  const isAdmin = currentUser?.role === 'Admin';
+  const [maintenanceConfig, setMaintenanceConfig] = useState({
+    enabled: false,
+    schedule: 'weekly',
+    day: 'sunday',
+    time: '03:00'
+  });
+  const [backupStatus, setBackupStatus] = useState('');
+  const [maintenanceStatus, setMaintenanceStatus] = useState('');
 
   useEffect(() => {
-    if (isAdmin) {
-      fetchStats();
-      fetchBackups();
-      fetchMaintenanceInfo();
-    } else {
-      setLoading(false);
-    }
-  }, [isAdmin]);
+    loadDatabaseStats();
+    loadBackups();
+    loadConfigurations();
+  }, []);
 
-  const fetchStats = async () => {
+  const loadDatabaseStats = async () => {
     try {
       const response = await axios.get('/api/tasks/database/stats');
-      setStats(response.data);
-      setLoading(false);
+      setDbStats(response.data);
     } catch (error) {
-      console.error('Error fetching stats:', error);
-      setLoading(false);
+      console.error('Error loading database stats:', error);
     }
   };
 
-  const fetchBackups = async () => {
+  const loadBackups = async () => {
     try {
-      const response = await axios.get('/api/tasks/backup/list');
-      setBackups(response.data);
+      const response = await axios.get('/api/tasks/backups');
+      setBackups(response.data || []);
     } catch (error) {
-      console.error('Error fetching backups:', error);
+      console.error('Error loading backups:', error);
     }
   };
 
-  const fetchMaintenanceInfo = async () => {
+  const loadConfigurations = async () => {
     try {
-      const response = await axios.get('/api/tasks/maintenance/schedule');
-      setMaintenanceSchedule(response.data.schedule);
-      setLastMaintenance(response.data.lastRun);
-      if (response.data.schedule) {
-        setScheduleForm({
-          cron_expression: response.data.schedule.cron_expression,
-          is_active: response.data.schedule.is_active
-        });
+      const response = await axios.get('/api/tasks/config');
+      if (response.data.backup) {
+        setBackupConfig(response.data.backup);
+      }
+      if (response.data.maintenance) {
+        setMaintenanceConfig(response.data.maintenance);
       }
     } catch (error) {
-      console.error('Error fetching maintenance info:', error);
-    }
-  };
-
-  const showProgressModal = (title) => {
-    setProgressTitle(title);
-    setProgressLog([]);
-    setProgressPercent(0);
-    setBackupError(null);
-    setShowProgress(true);
-  };
-
-  const addProgressLog = (message) => {
-    setProgressLog(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
-  };
-
-  const runMaintenance = async () => {
-    showProgressModal('Running Database Maintenance');
-    addProgressLog('Starting maintenance tasks...');
-    setProgressPercent(20);
-    
-    try {
-      addProgressLog('Running VACUUM ANALYZE...');
-      setProgressPercent(50);
-      
-      await axios.post('/api/tasks/maintenance/run');
-      
-      addProgressLog('Optimizing indexes...');
-      setProgressPercent(80);
-      
-      setTimeout(() => {
-        addProgressLog('Maintenance completed successfully!');
-        setProgressPercent(100);
-        fetchStats();
-        fetchMaintenanceInfo();
-      }, 1000);
-    } catch (error) {
-      addProgressLog('Error: ' + (error.response?.data?.message || error.message));
-      setBackupError(error.response?.data?.message || error.message);
-    }
-  };
-
-  const updateSchedule = async (e) => {
-    e.preventDefault();
-    try {
-      await axios.put('/api/tasks/maintenance/schedule', scheduleForm);
-      alert('Maintenance schedule updated successfully');
-      setShowScheduleModal(false);
-      fetchMaintenanceInfo();
-    } catch (error) {
-      alert('Error updating schedule: ' + (error.response?.data?.message || error.message));
+      console.error('Error loading configurations:', error);
     }
   };
 
   const createBackup = async () => {
-    showProgressModal('Creating Database Backup');
-    addProgressLog('Initializing backup process...');
-    setProgressPercent(10);
-    
+    setBackupStatus('Creating backup...');
     try {
-      addProgressLog('Creating backup directory...');
-      setProgressPercent(30);
-      
-      addProgressLog('Dumping database...');
-      setProgressPercent(60);
-      
-      const response = await axios.post('/api/tasks/backup/create');
-      
-      addProgressLog('Backup completed successfully!');
-      addProgressLog(`File: ${response.data.filename}`);
-      addProgressLog(`Size: ${response.data.size_formatted}`);
-      setProgressPercent(100);
-      
-      setTimeout(() => {
-        setShowProgress(false);
-        fetchBackups();
-      }, 2000);
+      const response = await axios.post('/api/tasks/backup');
+      setBackupStatus(`Backup created: ${response.data.filename}`);
+      loadBackups();
+      setTimeout(() => setBackupStatus(''), 5000);
     } catch (error) {
-      addProgressLog('Error: Backup failed');
-      addProgressLog(error.response?.data?.message || error.message);
-      setBackupError(error.response?.data?.message || error.message);
+      setBackupStatus('Backup failed: ' + error.message);
     }
   };
 
   const deleteBackup = async (filename) => {
-    if (window.confirm(`Are you sure you want to delete ${filename}?`)) {
+    if (window.confirm(`Delete backup ${filename}?`)) {
       try {
-        await axios.delete(`/api/tasks/backup/${filename}`);
-        fetchBackups();
+        await axios.delete(`/api/tasks/backups/${filename}`);
+        loadBackups();
       } catch (error) {
-        alert('Error deleting backup: ' + (error.response?.data?.message || error.message));
+        alert('Error deleting backup');
       }
     }
   };
 
-  const downloadBackup = (filename) => {
-    const token = localStorage.getItem('token');
-    window.open(`/api/tasks/backup/download/${filename}?token=${token}`, '_blank');
-  };
-
-  const closeProgressModal = () => {
-    setShowProgress(false);
-    setBackupError(null);
-  };
-
-  const formatCronExpression = (cron) => {
-    const parts = cron.split(' ');
-    if (parts.length !== 5) return cron;
-    
-    const [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
-    
-    if (dayOfMonth === '*' && month === '*' && dayOfWeek === '*') {
-      return `Daily at ${hour}:${minute.padStart(2, '0')}`;
+  const restoreBackup = async (filename) => {
+    if (window.confirm(`Restore database from ${filename}? This will replace all current data!`)) {
+      try {
+        await axios.post(`/api/tasks/restore/${filename}`);
+        alert('Database restored successfully');
+      } catch (error) {
+        alert('Error restoring backup');
+      }
     }
-    return cron;
   };
 
-  if (loading) {
-    return <div className="loading">Loading...</div>;
-  }
+  const runMaintenance = async () => {
+    setMaintenanceStatus('Running maintenance...');
+    try {
+      await axios.post('/api/tasks/maintenance');
+      setMaintenanceStatus('Maintenance completed successfully');
+      loadDatabaseStats();
+      setTimeout(() => setMaintenanceStatus(''), 5000);
+    } catch (error) {
+      setMaintenanceStatus('Maintenance failed: ' + error.message);
+    }
+  };
 
-  if (!isAdmin) {
-    return <div className="error-message">Access denied. Admin privileges required.</div>;
-  }
+  const saveBackupConfig = async () => {
+    try {
+      await axios.put('/api/tasks/config/backup', backupConfig);
+      alert('Backup configuration saved');
+    } catch (error) {
+      alert('Error saving backup configuration');
+    }
+  };
+
+  const saveMaintenanceConfig = async () => {
+    try {
+      await axios.put('/api/tasks/config/maintenance', maintenanceConfig);
+      alert('Maintenance configuration saved');
+    } catch (error) {
+      alert('Error saving maintenance configuration');
+    }
+  };
 
   return (
     <div className="tasks-page">
       <h1>System Tasks</h1>
       
-      <div className="stats-section">
+      {/* Database Statistics */}
+      <div className="task-section">
         <h2>Database Statistics</h2>
-        {stats && (
+        {dbStats ? (
           <div className="stats-grid">
-            <div className="stat-card">
-              <div className="stat-label">Total Users:</div>
-              <div className="stat-value">{stats.total_users}</div>
+            <div className="stat-item">
+              <label>Database Size:</label>
+              <span>{dbStats.database_size}</span>
             </div>
-            <div className="stat-card">
-              <div className="stat-label">Active Users:</div>
-              <div className="stat-value">{stats.active_users}</div>
+            <div className="stat-item">
+              <label>Total Tables:</label>
+              <span>{dbStats.table_count}</span>
             </div>
-            <div className="stat-card">
-              <div className="stat-label">Active Items:</div>
-              <div className="stat-value">{stats.active_items}</div>
+            <div className="stat-item">
+              <label>Total Records:</label>
+              <span>{dbStats.total_rows}</span>
             </div>
-            <div className="stat-card">
-              <div className="stat-label">Categories:</div>
-              <div className="stat-value">{stats.categories}</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-label">Database Size:</div>
-              <div className="stat-value">{stats.database_size_formatted}</div>
+            <div className="stat-item">
+              <label>Last Check:</label>
+              <span>{new Date(dbStats.last_check).toLocaleString()}</span>
             </div>
           </div>
+        ) : (
+          <p>Loading statistics...</p>
         )}
+        <button onClick={loadDatabaseStats} className="btn btn-secondary">Refresh Stats</button>
       </div>
 
-      <div className="maintenance-section">
-        <h2>Maintenance Tasks</h2>
-        <div className="maintenance-info">
-          <div className="maintenance-status">
-            <div className="status-item">
-              <span className="status-label">Schedule:</span>
-              <span className="status-value">
-                {maintenanceSchedule ? formatCronExpression(maintenanceSchedule.cron_expression) : 'Not set'}
-                {maintenanceSchedule && !maintenanceSchedule.is_active && ' (Disabled)'}
-              </span>
+      {/* Database Maintenance */}
+      <div className="task-section">
+        <h2>Database Maintenance</h2>
+        <div className="maintenance-config">
+          <h3>Schedule Maintenance</h3>
+          <div className="config-grid">
+            <div className="config-item">
+              <label>
+                <input 
+                  type="checkbox" 
+                  checked={maintenanceConfig.enabled}
+                  onChange={(e) => setMaintenanceConfig({...maintenanceConfig, enabled: e.target.checked})}
+                />
+                Enable Scheduled Maintenance
+              </label>
             </div>
-            <div className="status-item">
-              <span className="status-label">Last Run:</span>
-              <span className="status-value">
-                {lastMaintenance ? new Date(lastMaintenance.completed_at).toLocaleString() : 'Never'}
-              </span>
+            <div className="config-item">
+              <label>Schedule:</label>
+              <select 
+                value={maintenanceConfig.schedule}
+                onChange={(e) => setMaintenanceConfig({...maintenanceConfig, schedule: e.target.value})}
+              >
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+              </select>
+            </div>
+            {maintenanceConfig.schedule === 'weekly' && (
+              <div className="config-item">
+                <label>Day:</label>
+                <select 
+                  value={maintenanceConfig.day}
+                  onChange={(e) => setMaintenanceConfig({...maintenanceConfig, day: e.target.value})}
+                >
+                  <option value="sunday">Sunday</option>
+                  <option value="monday">Monday</option>
+                  <option value="tuesday">Tuesday</option>
+                  <option value="wednesday">Wednesday</option>
+                  <option value="thursday">Thursday</option>
+                  <option value="friday">Friday</option>
+                  <option value="saturday">Saturday</option>
+                </select>
+              </div>
+            )}
+            <div className="config-item">
+              <label>Time:</label>
+              <input 
+                type="time" 
+                value={maintenanceConfig.time}
+                onChange={(e) => setMaintenanceConfig({...maintenanceConfig, time: e.target.value})}
+              />
             </div>
           </div>
-          <div className="maintenance-actions">
-            <button className="btn btn-primary" onClick={runMaintenance}>
-              Run Now
-            </button>
-            <button className="btn btn-secondary" onClick={() => setShowScheduleModal(true)}>
-              Configure Schedule
-            </button>
+          <div className="config-actions">
+            <button onClick={saveMaintenanceConfig} className="btn btn-primary">Save Configuration</button>
+            <button onClick={runMaintenance} className="btn btn-warning">Run Maintenance Now</button>
           </div>
+          {maintenanceStatus && <p className="status-message">{maintenanceStatus}</p>}
         </div>
-        <p className="help-text">Optimizes database performance and cleans old audit logs</p>
       </div>
 
-      <div className="backup-section">
+      {/* Backup Management */}
+      <div className="task-section">
         <h2>Backup Management</h2>
-        <div className="backup-actions">
-          <button className="btn btn-success" onClick={createBackup}>
-            Create Backup Now
-          </button>
-        </div>
         
+        <div className="backup-config">
+          <h3>Backup Configuration</h3>
+          <div className="config-grid">
+            <div className="config-item">
+              <label>
+                <input 
+                  type="checkbox" 
+                  checked={backupConfig.enabled}
+                  onChange={(e) => setBackupConfig({...backupConfig, enabled: e.target.checked})}
+                />
+                Enable Scheduled Backups
+              </label>
+            </div>
+            <div className="config-item">
+              <label>Schedule:</label>
+              <select 
+                value={backupConfig.schedule}
+                onChange={(e) => setBackupConfig({...backupConfig, schedule: e.target.value})}
+              >
+                <option value="hourly">Hourly</option>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+              </select>
+            </div>
+            <div className="config-item">
+              <label>Time:</label>
+              <input 
+                type="time" 
+                value={backupConfig.time}
+                onChange={(e) => setBackupConfig({...backupConfig, time: e.target.value})}
+              />
+            </div>
+            <div className="config-item">
+              <label>Retention (days):</label>
+              <input 
+                type="number" 
+                value={backupConfig.retention}
+                onChange={(e) => setBackupConfig({...backupConfig, retention: parseInt(e.target.value)})}
+                min="1"
+                max="365"
+              />
+            </div>
+          </div>
+          <div className="config-actions">
+            <button onClick={saveBackupConfig} className="btn btn-primary">Save Configuration</button>
+            <button onClick={createBackup} className="btn btn-success">Create Backup Now</button>
+          </div>
+          {backupStatus && <p className="status-message">{backupStatus}</p>}
+        </div>
+
         <div className="backup-list">
           <h3>Existing Backups</h3>
-          {backups.length === 0 ? (
-            <p>No backups found</p>
-          ) : (
-            <table className="backup-table">
+          {backups.length > 0 ? (
+            <table>
               <thead>
                 <tr>
                   <th>Filename</th>
+                  <th>Date</th>
                   <th>Size</th>
-                  <th>Created</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -278,110 +285,21 @@ const Tasks = () => {
                 {backups.map(backup => (
                   <tr key={backup.filename}>
                     <td>{backup.filename}</td>
-                    <td>{backup.size_formatted}</td>
                     <td>{new Date(backup.created).toLocaleString()}</td>
+                    <td>{backup.size}</td>
                     <td>
-                      <div className="backup-actions-cell">
-                        <button 
-                          className="btn btn-sm btn-info"
-                          onClick={() => downloadBackup(backup.filename)}
-                        >
-                          Download
-                        </button>
-                        <button 
-                          className="btn btn-sm btn-warning"
-                          onClick={() => alert('Restore functionality coming soon')}
-                        >
-                          Restore
-                        </button>
-                        <button 
-                          className="btn btn-sm btn-danger"
-                          onClick={() => deleteBackup(backup.filename)}
-                        >
-                          Delete
-                        </button>
-                      </div>
+                      <button onClick={() => restoreBackup(backup.filename)} className="btn-small btn-restore">Restore</button>
+                      <button onClick={() => deleteBackup(backup.filename)} className="btn-small btn-delete">Delete</button>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          ) : (
+            <p>No backups found</p>
           )}
         </div>
       </div>
-
-      {showScheduleModal && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <h2>Configure Maintenance Schedule</h2>
-            <form onSubmit={updateSchedule}>
-              <div className="form-group">
-                <label>Schedule (Cron Expression)</label>
-                <select
-                  value={scheduleForm.cron_expression}
-                  onChange={(e) => setScheduleForm({...scheduleForm, cron_expression: e.target.value})}
-                >
-                  <option value="0 2 * * *">Daily at 2:00 AM</option>
-                  <option value="0 3 * * *">Daily at 3:00 AM</option>
-                  <option value="0 4 * * *">Daily at 4:00 AM</option>
-                  <option value="0 2 * * 0">Weekly on Sunday at 2:00 AM</option>
-                  <option value="0 2 1 * *">Monthly on 1st at 2:00 AM</option>
-                </select>
-              </div>
-              
-              <div className="form-group checkbox">
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={scheduleForm.is_active}
-                    onChange={(e) => setScheduleForm({...scheduleForm, is_active: e.target.checked})}
-                  />
-                  Enable scheduled maintenance
-                </label>
-              </div>
-              
-              <div className="form-actions">
-                <button type="submit" className="btn btn-primary">
-                  Save Schedule
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => setShowScheduleModal(false)}
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {showProgress && (
-        <div className="modal-overlay">
-          <div className="modal-content progress-modal">
-            <h2>{progressTitle}</h2>
-            <div className="progress-bar">
-              <div 
-                className="progress-fill"
-                style={{ width: `${progressPercent}%` }}
-              />
-            </div>
-            <div className="progress-log">
-              {progressLog.map((log, index) => (
-                <div key={index} className={backupError && log.includes('Error') ? 'error-log' : ''}>
-                  {log}
-                </div>
-              ))}
-            </div>
-            {(progressPercent === 100 || backupError) && (
-              <button className="btn btn-primary" onClick={closeProgressModal}>
-                Close
-              </button>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 };

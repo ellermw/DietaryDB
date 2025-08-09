@@ -1,0 +1,587 @@
+const express = require('express');
+const db = require('../config/database');
+const { authenticateToken, authorizeRole } = require('../middleware/auth');
+const { exec } = require('child_process');
+const path = require('path');
+const fs = require('fs').promises;
+const multer = require('multer');
+const cron = require('node-cron');
+
+const router = express.Router();
+
+// Configure multer for file uploads
+const upload = multer({
+  dest: '/tmp/uploads/',
+  limits: {
+    fileSize: 100 * 1024 * 1024 // 100MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'application/sql' || 
+        file.mimetype === 'text/plain' ||
+        file.originalname.endsWith('.sql')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only SQL files are allowed'));
+    }
+  }
+});
+
+// Default backup directory
+const BACKUP_DIR = process.env.BACKUP_DIR || '/opt/dietarydb/backups/databases';
+
+// Scheduled tasks storage
+let scheduledTasks = {};
+
+// Get database statistics
+router.get('/database/stats', [
+  authenticateToken,
+  authorizeRole('Admin')
+], async (req, res) => {
+  try {
+    // Get database size
+    const sizeResult = await db.query("SELECT pg_database_size(current_database()) as size");
+    const databaseSize = parseInt(sizeResult.rows[0].size);
+    
+    // Get counts using separate queries
+    const userCount = await db.query("SELECT COUNT(*) as count FROM users");
+    const activeUserCount = await db.query("SELECT COUNT(*) as count FROM users WHERE is_active = true AND last_activity > NOW() - INTERVAL '15 minutes'");
+    const itemCount = await db.query("SELECT COUNT(*) as count FROM items WHERE is_active = true");
+    const categoryCount = await db.query("SELECT COUNT(DISTINCT category) as count FROM items WHERE is_active = true");
+    
+    res.json({
+      database_size: formatBytes(databaseSize),
+      database_size_bytes: databaseSize,
+      total_users: parseInt(userCount.rows[0].count),
+      active_users: parseInt(activeUserCount.rows[0].count),
+      active_items: parseInt(itemCount.rows[0].count),
+      categories: parseInt(categoryCount.rows[0].count)
+    });
+  } catch (error) {
+    console.error('Error fetching database stats:', error);
+    res.status(500).json({ message: 'Error fetching database statistics' });
+  }
+});
+
+// Get maintenance schedule
+router.get('/maintenance/schedule', [
+  authenticateToken,
+  authorizeRole('Admin')
+], async (req, res) => {
+  try {
+    const result = await db.query(
+      'SELECT * FROM maintenance_schedule ORDER BY created_at DESC LIMIT 1'
+    );
+    
+    if (result.rows.length === 0) {
+      return res.json({ 
+        cron_expression: '0 2 * * *',
+        is_enabled: false,
+        last_run: null
+      });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error fetching maintenance schedule:', error);
+    res.json({ 
+      cron_expression: '0 2 * * *',
+      is_enabled: false,
+      last_run: null
+    });
+  }
+});
+
+// Update maintenance schedule
+router.put('/maintenance/schedule', [
+  authenticateToken,
+  authorizeRole('Admin')
+], async (req, res) => {
+  try {
+    const { cron_expression, is_enabled } = req.body;
+    
+    // Validate cron expression
+    if (!cron.validate(cron_expression)) {
+      return res.status(400).json({ message: 'Invalid cron expression' });
+    }
+    
+    // Update or insert schedule
+    const result = await db.query(
+      `INSERT INTO maintenance_schedule (cron_expression, is_enabled, created_by) 
+       VALUES ($1, $2, $3)
+       ON CONFLICT (id) DO UPDATE 
+       SET cron_expression = $1, is_enabled = $2, updated_at = CURRENT_TIMESTAMP
+       RETURNING *`,
+      [cron_expression, is_enabled, req.user.username]
+    );
+    
+    // Restart scheduled task if needed
+    Object.values(scheduledTasks).forEach(task => task.stop());
+    scheduledTasks = {};
+    await initializeScheduledMaintenance();
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error updating maintenance schedule:', error);
+    res.status(500).json({ message: 'Error updating maintenance schedule' });
+  }
+});
+
+// Run maintenance manually
+router.post('/maintenance/run', [
+  authenticateToken,
+  authorizeRole('Admin')
+], async (req, res) => {
+  try {
+    const startTime = new Date();
+    
+    // Log maintenance start
+    await db.query(
+      'INSERT INTO maintenance_log (task_type, status, started_at, created_by) VALUES ($1, $2, $3, $4)',
+      ['Manual Maintenance', 'Running', startTime, req.user.username]
+    );
+    
+    // Run VACUUM ANALYZE
+    await db.query('VACUUM ANALYZE');
+    
+    // Clean old audit logs (older than 90 days)
+    const cleanupResult = await db.query(
+      'DELETE FROM activity_log WHERE created_date < NOW() - INTERVAL \'90 days\''
+    );
+    
+    res.json({ 
+      message: 'Maintenance tasks completed successfully',
+      tasks_completed: ['VACUUM ANALYZE', 'Audit log cleanup'],
+      audit_logs_cleaned: cleanupResult.rowCount
+    });
+  } catch (error) {
+    console.error('Error running maintenance:', error);
+    res.status(500).json({ message: 'Error running maintenance tasks' });
+  }
+});
+
+// Create backup
+router.post('/backup/create', [
+  authenticateToken,
+  authorizeRole('Admin')
+], async (req, res) => {
+  try {
+    // Ensure backup directory exists
+    await fs.mkdir(BACKUP_DIR, { recursive: true });
+    
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filename = `dietary_backup_${timestamp}.sql`;
+    const filepath = path.join(BACKUP_DIR, filename);
+    
+    const command = `PGPASSWORD="${process.env.DB_PASSWORD}" pg_dump -h ${process.env.DB_HOST} -p ${process.env.DB_PORT} -U ${process.env.DB_USER} -d ${process.env.DB_NAME} -f ${filepath}`;
+    
+    exec(command, async (error, stdout, stderr) => {
+      if (error) {
+        console.error('Backup error:', error);
+        return res.status(500).json({ 
+          message: 'Backup failed',
+          error: error.message
+        });
+      }
+      
+      try {
+        const stats = await fs.stat(filepath);
+        
+        // Log backup in database
+        await db.query(
+          'INSERT INTO backup_history (backup_name, backup_type, backup_size, backup_path, created_by) VALUES ($1, $2, $3, $4, $5)',
+          [filename, 'manual', stats.size, filepath, req.user.username]
+        );
+        
+        res.json({
+          message: 'Backup created successfully',
+          filename: filename,
+          size: stats.size,
+          size_formatted: formatBytes(stats.size),
+          created: new Date()
+        });
+      } catch (statError) {
+        console.error('Error getting backup stats:', statError);
+        res.json({
+          message: 'Backup created successfully',
+          filename: filename
+        });
+      }
+    });
+  } catch (error) {
+    console.error('Error creating backup:', error);
+    res.status(500).json({ message: 'Error creating backup' });
+  }
+});
+
+// List backups
+router.get('/backup/list', [
+  authenticateToken,
+  authorizeRole('Admin')
+], async (req, res) => {
+  try {
+    await fs.mkdir(BACKUP_DIR, { recursive: true });
+    
+    const files = await fs.readdir(BACKUP_DIR);
+    const backups = [];
+    
+    for (const file of files) {
+      if (file.endsWith('.sql')) {
+        try {
+          const stats = await fs.stat(path.join(BACKUP_DIR, file));
+          backups.push({
+            filename: file,
+            size: stats.size,
+            size_formatted: formatBytes(stats.size),
+            created: stats.mtime
+          });
+        } catch (statError) {
+          console.error(`Error getting stats for ${file}:`, statError);
+        }
+      }
+    }
+    
+    // Sort by creation date (newest first)
+    backups.sort((a, b) => new Date(b.created) - new Date(a.created));
+    
+    res.json(backups);
+  } catch (error) {
+    console.error('Error listing backups:', error);
+    res.status(500).json({ message: 'Error listing backups' });
+  }
+});
+
+// Delete backup
+router.delete('/backup/:filename', [
+  authenticateToken,
+  authorizeRole('Admin')
+], async (req, res) => {
+  try {
+    const filename = req.params.filename;
+    
+    // Security check - ensure filename is valid
+    if (!filename.match(/^dietary_backup_[\d\-T]+\.sql$/)) {
+      return res.status(400).json({ message: 'Invalid filename' });
+    }
+    
+    const filepath = path.join(BACKUP_DIR, filename);
+    await fs.unlink(filepath);
+    
+    // Remove from backup history
+    await db.query(
+      'DELETE FROM backup_history WHERE backup_name = $1',
+      [filename]
+    );
+    
+    res.json({ message: 'Backup deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting backup:', error);
+    res.status(500).json({ message: 'Error deleting backup' });
+  }
+});
+
+// Download backup
+router.get('/backup/download/:filename', [
+  authenticateToken,
+  authorizeRole('Admin')
+], async (req, res) => {
+  try {
+    const filename = req.params.filename;
+    
+    // Security check
+    if (!filename.match(/^dietary_backup_[\d\-T]+\.sql$/)) {
+      return res.status(400).json({ message: 'Invalid filename' });
+    }
+    
+    const filepath = path.join(BACKUP_DIR, filename);
+    
+    // Check if file exists
+    await fs.access(filepath);
+    
+    res.download(filepath, filename);
+  } catch (error) {
+    console.error('Error downloading backup:', error);
+    res.status(404).json({ message: 'Backup file not found' });
+  }
+});
+
+// Restore from backup file (with file upload)
+router.post('/backup/restore', [
+  authenticateToken,
+  authorizeRole('Admin'),
+  upload.single('backup_file')
+], async (req, res) => {
+  const uploadedFile = req.file;
+  
+  if (!uploadedFile) {
+    return res.status(400).json({ message: 'No backup file provided' });
+  }
+  
+  try {
+    // Validate the uploaded file is a valid SQL backup
+    const fileContent = await fs.readFile(uploadedFile.path, 'utf8');
+    if (!fileContent.includes('-- PostgreSQL database dump') && 
+        !fileContent.includes('CREATE TABLE')) {
+      await fs.unlink(uploadedFile.path);
+      return res.status(400).json({ message: 'Invalid backup file format' });
+    }
+    
+    // Create a backup of current database before restore
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const preRestoreBackup = path.join(BACKUP_DIR, `pre_restore_backup_${timestamp}.sql`);
+    
+    await new Promise((resolve, reject) => {
+      const backupCommand = `PGPASSWORD="${process.env.DB_PASSWORD}" pg_dump -h ${process.env.DB_HOST} -p ${process.env.DB_PORT} -U ${process.env.DB_USER} -d ${process.env.DB_NAME} -f ${preRestoreBackup}`;
+      
+      exec(backupCommand, (error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+    
+    // Restore the uploaded backup
+    await new Promise((resolve, reject) => {
+      const restoreCommand = `PGPASSWORD="${process.env.DB_PASSWORD}" psql -h ${process.env.DB_HOST} -p ${process.env.DB_PORT} -U ${process.env.DB_USER} -d ${process.env.DB_NAME} -f ${uploadedFile.path}`;
+      
+      exec(restoreCommand, (error, stdout, stderr) => {
+        if (error) {
+          console.error('Restore error:', error);
+          console.error('stderr:', stderr);
+          reject(error);
+        } else {
+          resolve();
+        }
+      });
+    });
+    
+    // Clean up uploaded file
+    await fs.unlink(uploadedFile.path);
+    
+    // Log the restore
+    await db.query(
+      'INSERT INTO backup_history (backup_name, backup_type, created_by, status) VALUES ($1, $2, $3, $4)',
+      [`Restore from ${uploadedFile.originalname}`, 'restore', req.user.username, 'completed']
+    );
+    
+    res.json({ 
+      message: 'Database restored successfully',
+      pre_restore_backup: preRestoreBackup
+    });
+  } catch (error) {
+    console.error('Error restoring backup:', error);
+    
+    // Clean up uploaded file on error
+    if (uploadedFile && uploadedFile.path) {
+      try {
+        await fs.unlink(uploadedFile.path);
+      } catch (unlinkError) {
+        console.error('Error deleting uploaded file:', unlinkError);
+      }
+    }
+    
+    res.status(500).json({ 
+      message: 'Error restoring backup',
+      error: error.message
+    });
+  }
+});
+
+// Restore from existing backup
+router.post('/backup/restore/:filename', [
+  authenticateToken,
+  authorizeRole('Admin')
+], async (req, res) => {
+  try {
+    const filename = req.params.filename;
+    
+    // Security check
+    if (!filename.match(/^dietary_backup_[\d\-T]+\.sql$/)) {
+      return res.status(400).json({ message: 'Invalid filename' });
+    }
+    
+    const filepath = path.join(BACKUP_DIR, filename);
+    
+    // Check if file exists
+    await fs.access(filepath);
+    
+    // Create a backup before restore
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const preRestoreBackup = path.join(BACKUP_DIR, `pre_restore_backup_${timestamp}.sql`);
+    
+    await new Promise((resolve, reject) => {
+      const backupCommand = `PGPASSWORD="${process.env.DB_PASSWORD}" pg_dump -h ${process.env.DB_HOST} -p ${process.env.DB_PORT} -U ${process.env.DB_USER} -d ${process.env.DB_NAME} -f ${preRestoreBackup}`;
+      
+      exec(backupCommand, (error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+    
+    // Restore the backup
+    await new Promise((resolve, reject) => {
+      const restoreCommand = `PGPASSWORD="${process.env.DB_PASSWORD}" psql -h ${process.env.DB_HOST} -p ${process.env.DB_PORT} -U ${process.env.DB_USER} -d ${process.env.DB_NAME} -f ${filepath}`;
+      
+      exec(restoreCommand, (error, stdout, stderr) => {
+        if (error) {
+          console.error('Restore error:', error);
+          console.error('stderr:', stderr);
+          reject(error);
+        } else {
+          resolve();
+        }
+      });
+    });
+    
+    res.json({ 
+      message: 'Database restored successfully',
+      restored_from: filename,
+      pre_restore_backup: preRestoreBackup
+    });
+  } catch (error) {
+    console.error('Error restoring backup:', error);
+    res.status(500).json({ 
+      message: 'Error restoring backup',
+      error: error.message
+    });
+  }
+});
+
+// Helper function to format bytes
+function formatBytes(bytes, decimals = 2) {
+  if (bytes === 0) return '0 Bytes';
+  
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+  
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+
+// Initialize scheduled maintenance
+async function initializeScheduledMaintenance() {
+  try {
+    const result = await db.query(
+      'SELECT * FROM maintenance_schedule WHERE is_enabled = true ORDER BY created_at DESC LIMIT 1'
+    );
+    
+    if (result.rows.length > 0) {
+      const schedule = result.rows[0];
+      
+      if (scheduledTasks.maintenance) {
+        scheduledTasks.maintenance.stop();
+      }
+      
+      scheduledTasks.maintenance = cron.schedule(schedule.cron_expression, async () => {
+        console.log('Running scheduled maintenance...');
+        
+        try {
+          await db.query('VACUUM ANALYZE');
+          await db.query(
+            'UPDATE maintenance_schedule SET last_run = CURRENT_TIMESTAMP WHERE id = $1',
+            [schedule.id]
+          );
+          console.log('Scheduled maintenance completed');
+        } catch (error) {
+          console.error('Error in scheduled maintenance:', error);
+        }
+      });
+    }
+  } catch (error) {
+    console.error('Error initializing scheduled maintenance:', error);
+  }
+}
+
+// Initialize scheduled backups
+async function initializeScheduledBackups() {
+  try {
+    const result = await db.query(
+      'SELECT * FROM backup_schedules WHERE is_active = true'
+    );
+    
+    for (const schedule of result.rows) {
+      const cronExpression = buildCronExpression(schedule);
+      
+      if (scheduledTasks[`backup_${schedule.schedule_id}`]) {
+        scheduledTasks[`backup_${schedule.schedule_id}`].stop();
+      }
+      
+      scheduledTasks[`backup_${schedule.schedule_id}`] = cron.schedule(cronExpression, async () => {
+        console.log(`Running scheduled backup: ${schedule.schedule_name}`);
+        
+        try {
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+          const filename = `scheduled_backup_${timestamp}.sql`;
+          const filepath = path.join(BACKUP_DIR, filename);
+          
+          const command = `PGPASSWORD="${process.env.DB_PASSWORD}" pg_dump -h ${process.env.DB_HOST} -p ${process.env.DB_PORT} -U ${process.env.DB_USER} -d ${process.env.DB_NAME} -f ${filepath}`;
+          
+          exec(command, async (error) => {
+            if (!error) {
+              const stats = await fs.stat(filepath);
+              await db.query(
+                'INSERT INTO backup_history (backup_name, backup_type, backup_size, backup_path, schedule_id) VALUES ($1, $2, $3, $4, $5)',
+                [filename, 'scheduled', stats.size, filepath, schedule.schedule_id]
+              );
+              
+              // Clean up old backups based on retention policy
+              await cleanupOldBackups(schedule.retention_days);
+            }
+          });
+        } catch (error) {
+          console.error('Error in scheduled backup:', error);
+        }
+      });
+    }
+  } catch (error) {
+    console.error('Error initializing scheduled backups:', error);
+  }
+}
+
+// Build cron expression from schedule
+function buildCronExpression(schedule) {
+  const time = schedule.schedule_time.split(':');
+  const hour = time[0];
+  const minute = time[1];
+  
+  switch (schedule.schedule_type) {
+    case 'daily':
+      return `${minute} ${hour} * * *`;
+    case 'weekly':
+      return `${minute} ${hour} * * ${schedule.schedule_day_of_week}`;
+    case 'monthly':
+      return `${minute} ${hour} ${schedule.schedule_day_of_month} * *`;
+    default:
+      return `${minute} ${hour} * * *`;
+  }
+}
+
+// Clean up old backups
+async function cleanupOldBackups(retentionDays) {
+  try {
+    const files = await fs.readdir(BACKUP_DIR);
+    const now = new Date();
+    
+    for (const file of files) {
+      if (file.endsWith('.sql')) {
+        const filepath = path.join(BACKUP_DIR, file);
+        const stats = await fs.stat(filepath);
+        const ageInDays = (now - stats.mtime) / (1000 * 60 * 60 * 24);
+        
+        if (ageInDays > retentionDays) {
+          await fs.unlink(filepath);
+          console.log(`Deleted old backup: ${file}`);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error cleaning up old backups:', error);
+  }
+}
+
+// Initialize on module load
+initializeScheduledMaintenance();
+initializeScheduledBackups();
+
+module.exports = router;
+module.exports.initializeScheduledBackups = initializeScheduledBackups;

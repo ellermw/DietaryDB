@@ -1,280 +1,65 @@
 .users-page {
-  padding: 24px;
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 32px;
-}
-
-.page-header h1 {
-  margin: 0;
-  color: #2c3e50;
-  font-size: 28px;
-}
-
-.btn {
-  padding: 10px 20px;
-  border: none;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-primary {
-  background-color: #2196F3;
-  color: white;
-}
-
-.btn-primary:hover {
-  background-color: #1976D2;
-}
-
-.btn-secondary {
-  background-color: #95a5a6;
-  color: white;
-}
-
-.btn-secondary:hover {
-  background-color: #7f8c8d;
-}
-
-.btn-danger {
-  background-color: #e74c3c;
-  color: white;
-}
-
-.btn-danger:hover {
-  background-color: #c0392b;
-}
-
-.btn-success {
-  background-color: #27ae60;
-  color: white;
-}
-
-.btn-success:hover {
-  background-color: #229954;
-}
-
-.btn-sm {
-  padding: 6px 12px;
-  font-size: 13px;
-  margin: 0 4px;
-}
-
-.card {
-  background: white;
-  border-radius: 8px;
-  padding: 24px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  text-align: center;
-}
-
-.no-data {
-  color: #7f8c8d;
-  margin-bottom: 16px;
-}
-
-.users-table-container {
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  overflow: hidden;
+  padding: 2rem;
 }
 
 .users-table {
+  background: white;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  margin-top: 2rem;
+}
+
+.users-table table {
   width: 100%;
   border-collapse: collapse;
 }
 
 .users-table th {
-  background-color: #f8f9fa;
-  padding: 12px 16px;
+  background: #f8f9fa;
+  padding: 1rem;
   text-align: left;
   font-weight: 600;
-  color: #2c3e50;
-  border-bottom: 2px solid #e0e0e0;
+  color: #666;
+  text-transform: uppercase;
+  font-size: 0.875rem;
 }
 
 .users-table td {
-  padding: 12px 16px;
-  border-bottom: 1px solid #f0f0f0;
+  padding: 1rem;
+  border-top: 1px solid #eee;
 }
 
-.users-table tr:hover {
-  background-color: #f8f9fa;
-}
-
-.role-badge {
-  padding: 4px 12px;
-  border-radius: 4px;
-  font-size: 12px;
+.role {
+  padding: 0.25rem 0.75rem;
+  border-radius: 15px;
+  font-size: 0.875rem;
   font-weight: 500;
 }
 
-.role-badge.admin {
-  background-color: #e3f2fd;
-  color: #1976D2;
+.role.admin {
+  background: #e3f2fd;
+  color: #1976d2;
 }
 
-.role-badge.user {
-  background-color: #f3e5f5;
+.role.user {
+  background: #f3e5f5;
   color: #7b1fa2;
 }
 
-.status-badge {
-  padding: 4px 12px;
-  border-radius: 4px;
-  font-size: 12px;
+.status {
+  padding: 0.25rem 0.75rem;
+  border-radius: 15px;
+  font-size: 0.875rem;
   font-weight: 500;
 }
 
-.status-badge.active {
-  background-color: #e8f5e9;
+.status.active {
+  background: #e8f5e9;
   color: #2e7d32;
 }
 
-.status-badge.inactive {
-  background-color: #ffebee;
+.status.inactive {
+  background: #ffebee;
   color: #c62828;
-}
-
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.modal-content {
-  background: white;
-  border-radius: 8px;
-  padding: 32px;
-  width: 90%;
-  max-width: 500px;
-  max-height: 90vh;
-  overflow-y: auto;
-}
-
-.modal-content h2 {
-  margin: 0 0 24px 0;
-  color: #2c3e50;
-}
-
-.form-group {
-  margin-bottom: 20px;
-}
-
-.form-group label {
-  display: block;
-  margin-bottom: 8px;
-  font-weight: 500;
-  color: #2c3e50;
-}
-
-.form-group input,
-.form-group select {
-  width: 100%;
-  padding: 10px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 14px;
-}
-
-.form-group input:focus,
-.form-group select:focus {
-  outline: none;
-  border-color: #2196F3;
-}
-
-.form-actions {
-  display: flex;
-  gap: 12px;
-  margin-top: 24px;
-}
-
-.error-container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 400px;
-}
-
-.error-message {
-  text-align: center;
-  color: #e74c3c;
-}
-
-.error-message p {
-  margin-bottom: 16px;
-}
-
-.access-denied {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 400px;
-  font-size: 18px;
-  color: #7f8c8d;
-}
-
-/* Action Buttons */
-.action-buttons {
-  display: flex;
-  gap: 5px;
-  flex-wrap: wrap;
-}
-
-.role-badge {
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: bold;
-}
-
-.role-admin {
-  background-color: #dc3545;
-  color: white;
-}
-
-.role-user {
-  background-color: #007bff;
-  color: white;
-}
-
-.role-kitchen {
-  background-color: #28a745;
-  color: white;
-}
-
-.role-dietary {
-  background-color: #17a2b8;
-  color: white;
-}
-
-.status-badge {
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 12px;
-}
-
-.status-badge.active {
-  background-color: #d4edda;
-  color: #155724;
-}
-
-.status-badge.inactive {
-  background-color: #f8d7da;
-  color: #721c24;
 }

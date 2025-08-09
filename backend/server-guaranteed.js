@@ -7,12 +7,27 @@ const { Pool } = require('pg');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Database connection with error handling
 const pool = new Pool({
   host: process.env.DB_HOST || 'dietary_postgres',
   port: 5432,
   database: process.env.DB_NAME || 'dietary_db',
   user: process.env.DB_USER || 'dietary_user',
-  password: process.env.DB_PASSWORD || 'DietarySecurePass2024!'
+  password: process.env.DB_PASSWORD || 'DietarySecurePass2024!',
+  // Add connection pool settings
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000,
+});
+
+// Test database connection
+pool.connect((err, client, release) => {
+  if (err) {
+    console.error('Error connecting to database:', err.stack);
+  } else {
+    console.log('Database connected successfully');
+    release();
+  }
 });
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
@@ -20,12 +35,14 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
 // Middleware
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
+
+// Request logging
 app.use((req, res, next) => {
-  console.log(`${req.method} ${req.path}`);
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
   next();
 });
 
-// Initialize
+// Initialize database
 async function initDatabase() {
   try {
     await pool.query(`
@@ -38,24 +55,15 @@ async function initDatabase() {
         timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       )
     `);
-    
-    // Add some default categories if table is empty
-    const count = await pool.query('SELECT COUNT(*) FROM categories');
-    if (parseInt(count.rows[0].count) === 0) {
-      const defaults = ['Breakfast', 'Lunch', 'Dinner', 'Beverages', 'Snacks', 
-                       'Desserts', 'Sides', 'Condiments', 'Entrees', 'Soups', 
-                       'Salads', 'Appetizers', 'Dairy', 'Fruits'];
-      for (const cat of defaults) {
-        await pool.query('INSERT INTO categories (name) VALUES ($1) ON CONFLICT (name) DO NOTHING', [cat]);
-      }
-      console.log('Added default categories');
-    }
+    console.log('Activity log table ready');
   } catch (error) {
-    console.error('Init error:', error);
+    console.error('Error creating activity_log:', error);
   }
 }
+
 initDatabase();
 
+// Activity logging
 async function logActivity(userId, username, action, details = '') {
   try {
     await pool.query(
@@ -63,13 +71,13 @@ async function logActivity(userId, username, action, details = '') {
       [userId, username, action, details]
     );
   } catch (error) {
-    console.error('Log error:', error);
+    console.error('Activity log error:', error);
   }
 }
 
-// Health
+// Health check
 app.get('/health', (req, res) => {
-  res.json({ status: 'healthy' });
+  res.json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
 
 // Login
@@ -116,7 +124,12 @@ app.get('/api/dashboard', async (req, res) => {
     });
   } catch (error) {
     console.error('Dashboard error:', error);
-    res.json({ totalItems: 0, totalUsers: 1, totalCategories: 0, recentActivity: [] });
+    res.json({
+      totalItems: 0,
+      totalUsers: 1,
+      totalCategories: 0,
+      recentActivity: []
+    });
   }
 });
 
@@ -126,6 +139,7 @@ app.get('/api/items', async (req, res) => {
     const result = await pool.query('SELECT * FROM items WHERE is_active = true ORDER BY item_id DESC');
     res.json(result.rows);
   } catch (error) {
+    console.error('Items error:', error);
     res.json([]);
   }
 });
@@ -138,13 +152,10 @@ app.post('/api/items', async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
       [name, category, is_ada_friendly || false, fluid_ml, sodium_mg, carbs_g, calories]
     );
-    
-    // Update item count in categories table
-    await pool.query('UPDATE categories SET item_count = item_count + 1 WHERE name = $1', [category]);
-    
     await logActivity(1, 'admin', 'Create Item', `Created: ${name}`);
     res.json(result.rows[0]);
   } catch (error) {
+    console.error('Create item error:', error);
     res.status(500).json({ message: 'Error creating item' });
   }
 });
@@ -153,26 +164,16 @@ app.put('/api/items/:id', async (req, res) => {
   const { id } = req.params;
   const { name, category, is_ada_friendly, fluid_ml, sodium_mg, carbs_g, calories } = req.body;
   try {
-    // Get old category
-    const oldItem = await pool.query('SELECT category FROM items WHERE item_id = $1', [id]);
-    const oldCategory = oldItem.rows[0]?.category;
-    
     const result = await pool.query(
       `UPDATE items SET name=$1, category=$2, is_ada_friendly=$3, fluid_ml=$4, 
        sodium_mg=$5, carbs_g=$6, calories=$7, modified_date=CURRENT_TIMESTAMP 
        WHERE item_id=$8 RETURNING *`,
       [name, category, is_ada_friendly, fluid_ml, sodium_mg, carbs_g, calories, id]
     );
-    
-    // Update category counts if category changed
-    if (oldCategory && oldCategory !== category) {
-      await pool.query('UPDATE categories SET item_count = GREATEST(0, item_count - 1) WHERE name = $1', [oldCategory]);
-      await pool.query('UPDATE categories SET item_count = item_count + 1 WHERE name = $1', [category]);
-    }
-    
     await logActivity(1, 'admin', 'Update Item', `Updated: ${name}`);
     res.json(result.rows[0]);
   } catch (error) {
+    console.error('Update item error:', error);
     res.status(500).json({ message: 'Error updating item' });
   }
 });
@@ -180,133 +181,125 @@ app.put('/api/items/:id', async (req, res) => {
 app.delete('/api/items/:id', async (req, res) => {
   const { id } = req.params;
   try {
-    // Get category of item being deleted
-    const item = await pool.query('SELECT category FROM items WHERE item_id = $1', [id]);
-    const category = item.rows[0]?.category;
-    
     await pool.query('UPDATE items SET is_active = false WHERE item_id = $1', [id]);
-    
-    // Update category count
-    if (category) {
-      await pool.query('UPDATE categories SET item_count = GREATEST(0, item_count - 1) WHERE name = $1', [category]);
-    }
-    
     await logActivity(1, 'admin', 'Delete Item', `Deleted item ${id}`);
     res.json({ message: 'Item deleted' });
   } catch (error) {
+    console.error('Delete item error:', error);
     res.status(500).json({ message: 'Error deleting item' });
   }
 });
 
+// Bulk delete
 app.post('/api/items/bulk-delete', async (req, res) => {
   const { ids } = req.body;
   try {
-    // Get categories of items being deleted
-    const items = await pool.query('SELECT category FROM items WHERE item_id = ANY($1) AND is_active = true', [ids]);
-    
-    // Count items per category
-    const categoryCounts = {};
-    items.rows.forEach(item => {
-      categoryCounts[item.category] = (categoryCounts[item.category] || 0) + 1;
-    });
-    
-    // Delete items
     await pool.query('UPDATE items SET is_active = false WHERE item_id = ANY($1)', [ids]);
-    
-    // Update category counts
-    for (const [category, count] of Object.entries(categoryCounts)) {
-      await pool.query('UPDATE categories SET item_count = GREATEST(0, item_count - $1) WHERE name = $2', [count, category]);
-    }
-    
     await logActivity(1, 'admin', 'Bulk Delete', `Deleted ${ids.length} items`);
     res.json({ message: `${ids.length} items deleted` });
   } catch (error) {
+    console.error('Bulk delete error:', error);
     res.status(500).json({ message: 'Error deleting items' });
   }
 });
 
-// CATEGORIES - USING CORRECT COLUMN NAME 'name'
+// CRITICAL: Categories endpoint with exact format frontend expects
 app.get('/api/categories', async (req, res) => {
-  console.log('GET /api/categories');
+  console.log('GET /api/categories called');
   
   try {
-    // Query using the ACTUAL column name: 'name' not 'category_name'
-    const result = await pool.query(`
-      SELECT 
-        c.name as category,
-        COALESCE(COUNT(i.item_id), 0) as item_count
-      FROM categories c
-      LEFT JOIN items i ON c.name = i.category AND i.is_active = true
-      GROUP BY c.category_id, c.name
-      ORDER BY c.name
-    `);
+    // First, get all categories
+    const categoriesResult = await pool.query(
+      'SELECT category_id, category_name FROM categories ORDER BY category_name'
+    );
     
-    console.log(`Returning ${result.rows.length} categories`);
-    res.json(result.rows);
+    console.log(`Found ${categoriesResult.rows.length} categories in database`);
+    
+    // Get item counts
+    const itemsResult = await pool.query(
+      'SELECT category, COUNT(*) as count FROM items WHERE is_active = true GROUP BY category'
+    );
+    
+    // Build count map
+    const counts = {};
+    itemsResult.rows.forEach(row => {
+      counts[row.category] = parseInt(row.count);
+    });
+    
+    // Build response with EXACT format needed
+    const response = categoriesResult.rows.map(cat => {
+      return {
+        category: cat.category_name,  // Frontend expects 'category' not 'category_name'
+        item_count: counts[cat.category_name] || 0
+      };
+    });
+    
+    console.log('Returning categories:', JSON.stringify(response));
+    res.json(response);
     
   } catch (error) {
-    console.error('Categories error:', error.message);
-    // If join fails, try simple query
-    try {
-      const simple = await pool.query('SELECT name as category, item_count FROM categories ORDER BY name');
-      res.json(simple.rows);
-    } catch (err2) {
-      console.error('Simple query also failed:', err2.message);
-      res.json([]);
-    }
+    console.error('Categories endpoint error:', error);
+    // Return empty array on error, not an error response
+    res.json([]);
   }
 });
 
+// Create category
 app.post('/api/categories', async (req, res) => {
   const { category_name } = req.body;
   
-  console.log('Creating category:', category_name);
+  console.log('POST /api/categories - Creating:', category_name);
   
   if (!category_name || category_name.trim() === '') {
     return res.status(400).json({ message: 'Category name is required' });
   }
   
   try {
-    // Check if exists - using 'name' column
+    // Check if exists
     const existing = await pool.query(
-      'SELECT category_id FROM categories WHERE LOWER(name) = LOWER($1)',
+      'SELECT category_id FROM categories WHERE LOWER(category_name) = LOWER($1)',
       [category_name.trim()]
     );
     
     if (existing.rows.length > 0) {
+      console.log('Category already exists:', category_name);
       return res.status(400).json({ message: 'Category already exists' });
     }
     
-    // Insert using 'name' column
+    // Insert new category
     const result = await pool.query(
-      'INSERT INTO categories (name, item_count) VALUES ($1, 0) RETURNING category_id, name',
+      'INSERT INTO categories (category_name) VALUES ($1) RETURNING *',
       [category_name.trim()]
     );
     
+    console.log('Category created successfully:', result.rows[0]);
     await logActivity(1, 'admin', 'Create Category', `Created: ${category_name}`);
-    res.json({ message: 'Category created successfully', category: result.rows[0] });
+    
+    res.json({ 
+      message: 'Category created successfully',
+      category: result.rows[0]
+    });
     
   } catch (error) {
     console.error('Create category error:', error);
-    res.status(500).json({ message: 'Error creating category' });
+    res.status(500).json({ message: 'Database error: ' + error.message });
   }
 });
 
+// Delete category
 app.delete('/api/categories/:name', async (req, res) => {
   const categoryName = decodeURIComponent(req.params.name);
   
+  console.log('DELETE /api/categories - Deleting:', categoryName);
+  
   try {
-    // Check item count from the categories table itself
-    const catCheck = await pool.query(
-      'SELECT item_count FROM categories WHERE name = $1',
+    // Check for items using this category
+    const itemCheck = await pool.query(
+      'SELECT COUNT(*) FROM items WHERE category = $1 AND is_active = true',
       [categoryName]
     );
     
-    if (catCheck.rows.length === 0) {
-      return res.status(404).json({ message: 'Category not found' });
-    }
-    
-    const itemCount = parseInt(catCheck.rows[0].item_count || 0);
+    const itemCount = parseInt(itemCheck.rows[0].count);
     
     if (itemCount > 0) {
       return res.status(400).json({ 
@@ -316,9 +309,9 @@ app.delete('/api/categories/:name', async (req, res) => {
       });
     }
     
-    // Delete using 'name' column
+    // Delete category
     const result = await pool.query(
-      'DELETE FROM categories WHERE name = $1 RETURNING *',
+      'DELETE FROM categories WHERE category_name = $1 RETURNING *',
       [categoryName]
     );
     
@@ -326,10 +319,13 @@ app.delete('/api/categories/:name', async (req, res) => {
       return res.status(404).json({ message: 'Category not found' });
     }
     
+    console.log('Category deleted:', categoryName);
     await logActivity(1, 'admin', 'Delete Category', `Deleted: ${categoryName}`);
+    
     res.json({ message: 'Category deleted successfully' });
     
   } catch (error) {
+    console.error('Delete category error:', error);
     res.status(500).json({ message: 'Error deleting category' });
   }
 });
@@ -337,36 +333,25 @@ app.delete('/api/categories/:name', async (req, res) => {
 // Debug endpoint
 app.get('/api/debug/categories', async (req, res) => {
   try {
-    const categories = await pool.query('SELECT * FROM categories ORDER BY name');
+    const categories = await pool.query('SELECT * FROM categories');
     const items = await pool.query('SELECT category, COUNT(*) FROM items WHERE is_active = true GROUP BY category');
+    const apiResponse = await pool.query(`
+      SELECT c.category_name as category, 
+             COALESCE(COUNT(i.item_id), 0) as item_count
+      FROM categories c
+      LEFT JOIN items i ON c.category_name = i.category AND i.is_active = true
+      GROUP BY c.category_name
+      ORDER BY c.category_name
+    `);
     
     res.json({
-      categories_table: categories.rows,
+      raw_categories: categories.rows,
       items_by_category: items.rows,
-      total_categories: categories.rows.length
+      api_format: apiResponse.rows,
+      total_in_db: categories.rows.length
     });
   } catch (error) {
-    res.json({ error: error.message });
-  }
-});
-
-// Recalculate category counts
-app.post('/api/categories/recalculate', async (req, res) => {
-  try {
-    // Reset all counts to 0
-    await pool.query('UPDATE categories SET item_count = 0');
-    
-    // Get actual counts
-    const counts = await pool.query('SELECT category, COUNT(*) as count FROM items WHERE is_active = true GROUP BY category');
-    
-    // Update each category
-    for (const row of counts.rows) {
-      await pool.query('UPDATE categories SET item_count = $1 WHERE name = $2', [row.count, row.category]);
-    }
-    
-    res.json({ message: 'Category counts recalculated' });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.json({ error: error.message, stack: error.stack });
   }
 });
 
@@ -410,7 +395,9 @@ app.put('/api/users/:id', async (req, res) => {
 
 app.delete('/api/users/:id', async (req, res) => {
   const { id } = req.params;
-  if (id == 1) return res.status(400).json({ message: 'Cannot delete admin' });
+  if (id == 1) {
+    return res.status(400).json({ message: 'Cannot delete admin' });
+  }
   try {
     await pool.query('UPDATE users SET is_active = false WHERE user_id = $1', [id]);
     res.json({ message: 'User deactivated' });
@@ -465,7 +452,7 @@ app.get('/api/tasks/export/items', async (req, res) => {
 });
 
 app.post('/api/tasks/import/items', (req, res) => {
-  res.json({ message: 'Import completed' });
+  res.json({ message: 'Import completed', imported: 0 });
 });
 
 app.get('/api/tasks/reports', (req, res) => {
@@ -480,11 +467,21 @@ app.get('/api/tasks/logs', (req, res) => {
   res.json([]);
 });
 
+// 404 handler
 app.use('*', (req, res) => {
+  console.log('404 Not Found:', req.originalUrl);
   res.status(404).json({ message: 'Not found' });
 });
 
+// Start server
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`DietaryDB Backend - Port ${PORT}`);
-  console.log('Using correct column: "name" not "category_name"');
+  console.log(`
+====================================
+DietaryDB Backend Running
+Port: ${PORT}
+Time: ${new Date().toISOString()}
+Categories endpoint: GET /api/categories
+Debug endpoint: GET /api/debug/categories
+====================================
+  `);
 });

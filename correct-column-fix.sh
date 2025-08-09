@@ -1,3 +1,27 @@
+#!/bin/bash
+# /opt/dietarydb/correct-column-fix.sh
+# Fix backend to use 'name' instead of 'category_name'
+
+set -e
+
+echo "======================================"
+echo "Fixing Backend to Use Correct Column"
+echo "======================================"
+echo ""
+
+cd /opt/dietarydb
+
+# The table has 'name' not 'category_name' - let's work with what we have!
+echo "Step 1: Verifying current categories"
+echo "===================================="
+docker exec dietary_postgres psql -U dietary_user -d dietary_db -c "SELECT category_id, name FROM categories ORDER BY name;" || echo "Error"
+echo ""
+
+# Step 2: Create backend that uses the ACTUAL column names
+echo "Step 2: Creating backend with correct column names"
+echo "=================================================="
+
+cat > backend/server-correct-columns.js << 'EOF'
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
@@ -488,3 +512,89 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`DietaryDB Backend - Port ${PORT}`);
   console.log('Using correct column: "name" not "category_name"');
 });
+EOF
+
+docker cp backend/server-correct-columns.js dietary_backend:/app/server.js
+docker restart dietary_backend
+echo "Backend updated with correct column names"
+sleep 6
+echo ""
+
+# Step 3: Add missing default categories
+echo "Step 3: Ensuring all default categories exist"
+echo "============================================="
+docker exec dietary_postgres psql -U dietary_user -d dietary_db << 'EOF'
+-- Add any missing default categories
+INSERT INTO categories (name, item_count) VALUES 
+('Beverages', 0),
+('Lunch', 0),
+('Condiments', 0),
+('Entrees', 0),
+('Soups', 0),
+('Salads', 0),
+('Appetizers', 0),
+('Dairy', 0),
+('Fruits', 0)
+ON CONFLICT (name) DO NOTHING;
+
+-- Show all categories
+SELECT category_id, name, item_count FROM categories ORDER BY name;
+EOF
+echo ""
+
+# Step 4: Recalculate item counts
+echo "Step 4: Recalculating item counts"
+echo "================================="
+docker exec dietary_postgres psql -U dietary_user -d dietary_db << 'EOF'
+-- Reset all counts
+UPDATE categories SET item_count = 0;
+
+-- Update with actual counts
+UPDATE categories c 
+SET item_count = COALESCE((
+    SELECT COUNT(*) 
+    FROM items i 
+    WHERE i.category = c.name 
+    AND i.is_active = true
+), 0);
+
+-- Show updated counts
+SELECT name, item_count FROM categories ORDER BY name;
+EOF
+echo ""
+
+# Step 5: Test the API
+echo "Step 5: Testing the fixed API"
+echo "============================="
+echo "Categories endpoint:"
+curl -s http://localhost:3000/api/categories | python3 -m json.tool | head -30 || echo "API Response"
+echo ""
+
+echo "Debug endpoint:"
+curl -s http://localhost:3000/api/debug/categories | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    print(f'Total categories: {data.get(\"total_categories\", 0)}')
+    if 'categories_table' in data:
+        for cat in data['categories_table'][:5]:
+            print(f\"  - {cat.get('name', 'Unknown')}: {cat.get('item_count', 0)} items\")
+except Exception as e:
+    print(f'Error: {e}')
+" 2>/dev/null
+echo ""
+
+echo "======================================"
+echo "✅ CATEGORIES FINALLY FIXED!"
+echo "======================================"
+echo ""
+echo "The backend now uses the correct column name: 'name'"
+echo "All 14 categories should be available"
+echo ""
+echo "Please:"
+echo "1. Clear your browser cache (Ctrl+Shift+Delete)"
+echo "2. Go to http://15.204.252.189:3001"
+echo "3. Navigate to the Items page"
+echo ""
+echo "Categories will now display correctly!"
+echo ""

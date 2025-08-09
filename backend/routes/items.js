@@ -1,55 +1,138 @@
 const express = require('express');
 const router = express.Router();
+const { authenticateToken, authorizeRole } = require('../middleware/auth');
+const { Pool } = require('pg');
 
-// Hardcoded data for now to ensure it works
-const mockItems = [
-  { item_id: 1, name: 'Scrambled Eggs', category: 'Breakfast', calories: 140, sodium_mg: 180, carbs_g: 2, is_ada_friendly: false },
-  { item_id: 2, name: 'Oatmeal', category: 'Breakfast', calories: 150, sodium_mg: 140, carbs_g: 27, is_ada_friendly: true },
-  { item_id: 3, name: 'Whole Wheat Toast', category: 'Breakfast', calories: 70, sodium_mg: 150, carbs_g: 12, is_ada_friendly: true },
-  { item_id: 4, name: 'Orange Juice', category: 'Beverages', calories: 110, sodium_mg: 2, carbs_g: 26, is_ada_friendly: true },
-  { item_id: 5, name: 'Coffee', category: 'Beverages', calories: 2, sodium_mg: 5, carbs_g: 0, is_ada_friendly: true },
-  { item_id: 6, name: 'Grilled Chicken', category: 'Lunch', calories: 165, sodium_mg: 440, carbs_g: 0, is_ada_friendly: false },
-  { item_id: 7, name: 'Garden Salad', category: 'Lunch', calories: 35, sodium_mg: 140, carbs_g: 10, is_ada_friendly: true },
-  { item_id: 8, name: 'Turkey Sandwich', category: 'Lunch', calories: 320, sodium_mg: 580, carbs_g: 42, is_ada_friendly: false },
-  { item_id: 9, name: 'Apple', category: 'Snacks', calories: 95, sodium_mg: 2, carbs_g: 25, is_ada_friendly: true },
-  { item_id: 10, name: 'Chocolate Cake', category: 'Desserts', calories: 350, sodium_mg: 370, carbs_g: 51, is_ada_friendly: true },
-  { item_id: 11, name: 'Chicken Soup', category: 'Soups', calories: 120, sodium_mg: 890, carbs_g: 18, is_ada_friendly: false },
-  { item_id: 12, name: 'French Fries', category: 'Sides', calories: 365, sodium_mg: 280, carbs_g: 48, is_ada_friendly: true }
-];
-
-// Get all items
-router.get('/', async (req, res) => {
-  console.log('Items route accessed');
-  
-  // Try database first
-  try {
-    const { Pool } = require('pg');
-    const pool = new Pool({
-      host: process.env.DB_HOST || 'postgres',
-      port: 5432,
-      database: 'dietary_db',
-      user: 'dietary_user',
-      password: process.env.DB_PASSWORD || 'DietarySecurePass2024!'
-    });
-    
-    const result = await pool.query('SELECT * FROM items WHERE is_active = true ORDER BY category, name');
-    await pool.end();
-    
-    if (result.rows.length > 0) {
-      return res.json(result.rows);
-    }
-  } catch (err) {
-    console.log('Database query failed, using mock data:', err.message);
-  }
-  
-  // Return mock data if database fails
-  res.json(mockItems);
+const pool = new Pool({
+  host: process.env.DB_HOST || 'dietary_postgres',
+  port: parseInt(process.env.DB_PORT || '5432'),
+  database: process.env.DB_NAME || 'dietary_db',
+  user: process.env.DB_USER || 'dietary_user',
+  password: process.env.DB_PASSWORD || 'DietarySecurePass2024!',
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000,
 });
 
-// Get categories
-router.get('/categories', async (req, res) => {
-  const categories = ['Breakfast', 'Lunch', 'Dinner', 'Beverages', 'Snacks', 'Desserts', 'Sides', 'Soups'];
-  res.json(categories);
+// Get all items
+router.get('/', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM items WHERE is_active = true ORDER BY name'
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching items:', error);
+    res.status(500).json({ message: 'Error fetching items' });
+  }
+});
+
+// Get single item
+router.get('/:id', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM items WHERE item_id = $1',
+      [req.params.id]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Item not found' });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error fetching item:', error);
+    res.status(500).json({ message: 'Error fetching item' });
+  }
+});
+
+// Create new item
+router.post('/', [authenticateToken, authorizeRole('Admin')], async (req, res) => {
+  const { name, category, calories, sodium_mg, carbs_g, protein_g, fat_g, fiber_g, sugar_g, fluid_ml, is_ada_friendly } = req.body;
+  
+  try {
+    const result = await pool.query(
+      `INSERT INTO items (name, category, calories, sodium_mg, carbs_g, protein_g, fat_g, fiber_g, sugar_g, fluid_ml, is_ada_friendly)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       RETURNING *`,
+      [name, category, calories, sodium_mg, carbs_g, protein_g, fat_g, fiber_g, sugar_g, fluid_ml, is_ada_friendly]
+    );
+    
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error('Error creating item:', error);
+    res.status(500).json({ message: 'Error creating item' });
+  }
+});
+
+// Update item
+router.put('/:id', [authenticateToken, authorizeRole('Admin')], async (req, res) => {
+  const { name, category, calories, sodium_mg, carbs_g, protein_g, fat_g, fiber_g, sugar_g, fluid_ml, is_ada_friendly } = req.body;
+  
+  try {
+    const result = await pool.query(
+      `UPDATE items SET name = $1, category = $2, calories = $3, sodium_mg = $4,
+       carbs_g = $5, protein_g = $6, fat_g = $7, fiber_g = $8, sugar_g = $9,
+       fluid_ml = $10, is_ada_friendly = $11, updated_date = CURRENT_TIMESTAMP
+       WHERE item_id = $12 RETURNING *`,
+      [name, category, calories, sodium_mg, carbs_g, protein_g, fat_g, fiber_g, sugar_g, fluid_ml, is_ada_friendly, req.params.id]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Item not found' });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error updating item:', error);
+    res.status(500).json({ message: 'Error updating item' });
+  }
+});
+
+// Delete single item
+router.delete('/:id', [authenticateToken, authorizeRole('Admin')], async (req, res) => {
+  try {
+    const result = await pool.query(
+      'UPDATE items SET is_active = false WHERE item_id = $1 RETURNING name',
+      [req.params.id]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Item not found' });
+    }
+    
+    res.json({ message: `Item "${result.rows[0].name}" deleted successfully` });
+  } catch (error) {
+    console.error('Error deleting item:', error);
+    res.status(500).json({ message: 'Error deleting item' });
+  }
+});
+
+// BULK DELETE - Delete multiple items
+router.post('/bulk-delete', [authenticateToken, authorizeRole('Admin')], async (req, res) => {
+  const { item_ids } = req.body;
+  
+  if (!item_ids || !Array.isArray(item_ids) || item_ids.length === 0) {
+    return res.status(400).json({ message: 'No items selected for deletion' });
+  }
+  
+  try {
+    const placeholders = item_ids.map((_, i) => `$${i + 1}`).join(',');
+    const result = await pool.query(
+      `UPDATE items SET is_active = false 
+       WHERE item_id IN (${placeholders}) 
+       RETURNING name`,
+      item_ids
+    );
+    
+    res.json({ 
+      message: `Successfully deleted ${result.rowCount} items`,
+      deleted_items: result.rows.map(r => r.name)
+    });
+  } catch (error) {
+    console.error('Error bulk deleting items:', error);
+    res.status(500).json({ message: 'Error deleting items' });
+  }
 });
 
 module.exports = router;

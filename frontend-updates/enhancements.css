@@ -1,0 +1,234 @@
+/* Bulk Selection Styles */
+.items-controls {
+  padding: 10px;
+  background: #f5f5f5;
+  border-radius: 4px;
+  margin: 10px 0;
+}
+
+.items-table th input[type="checkbox"],
+.items-table td input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
+}
+
+.items-table tr.selected {
+  background-color: #e3f2fd;
+}
+
+/* Progress Modal Styles */
+.progress-modal {
+  min-width: 500px;
+}
+
+.progress-container {
+  background: #f0f0f0;
+  border-radius: 4px;
+  height: 30px;
+  overflow: hidden;
+  margin: 20px 0;
+}
+
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #007bff, #0056b3);
+  transition: width 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: bold;
+}
+
+.progress-logs {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  padding: 15px;
+  border-radius: 4px;
+  height: 200px;
+  overflow-y: auto;
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+  margin: 20px 0;
+}
+
+.log-entry {
+  margin: 5px 0;
+  display: flex;
+  gap: 10px;
+}
+
+.log-time {
+  color: #858585;
+  font-size: 12px;
+}
+
+.log-message {
+  flex: 1;
+}
+
+.log-entry.error {
+  color: #f48771;
+}
+
+.log-entry.success {
+  color: #4ec9b0;
+}
+
+/* Category Modal Styles */
+.add-category-form {
+  display: flex;
+  gap: 10px;
+  margin: 20px 0;
+  padding: 15px;
+  background: #f8f9fa;
+  border-radius: 4px;
+}
+
+.add-category-form input {
+  flex: 1;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.categories-list {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.categories-list table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.categories-list th,
+.categories-list td {
+  padding: 10px;
+  text-align: left;
+  border-bottom: 1px solid #ddd;
+}
+
+/* Tasks Page Styles */
+.task-section {
+  background: white;
+  padding: 20px;
+  margin: 20px 0;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 15px;
+  margin: 20px 0;
+}
+
+.stat-card {
+  background: #f8f9fa;
+  padding: 15px;
+  border-radius: 4px;
+  text-align: center;
+}
+
+.stat-card label {
+  display: block;
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 5px;
+}
+
+.stat-card span {
+  font-size: 24px;
+  font-weight: bold;
+  color: #333;
+}
+
+.maintenance-controls {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.schedule-form {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.backups-list {
+  margin-top: 20px;
+}
+
+.backups-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+}
+
+.backups-table th,
+.backups-table td {
+  padding: 10px;
+  text-align: left;
+  border-bottom: 1px solid #ddd;
+}
+
+.backups-table button {
+  margin: 0 2px;
+}
+
+/* Button Styles */
+.btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: opacity 0.3s;
+}
+
+.btn:hover {
+  opacity: 0.9;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: #007bff;
+  color: white;
+}
+
+.btn-secondary {
+  background: #6c757d;
+  color: white;
+}
+
+.btn-success {
+  background: #28a745;
+  color: white;
+}
+
+.btn-danger {
+  background: #dc3545;
+  color: white;
+}
+
+.btn-warning {
+  background: #ffc107;
+  color: black;
+}
+
+.btn-info {
+  background: #17a2b8;
+  color: white;
+}
+
+.btn-sm {
+  padding: 4px 8px;
+  font-size: 12px;
+}

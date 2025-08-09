@@ -1,593 +1,89 @@
 const express = require('express');
 const cors = require('cors');
-const helmet = require('helmet');
-const morgan = require('morgan');
-const compression = require('compression');
-const bcryptjs = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const { Pool } = require('pg');
-const fs = require('fs');
+const dotenv = require('dotenv');
 const path = require('path');
-require('dotenv').config();
+
+// Load environment variables
+dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-
-// Database connection
-const pool = new Pool({
-  host: process.env.DB_HOST || 'postgres',
-  port: parseInt(process.env.DB_PORT || '5432'),
-  database: process.env.DB_NAME || 'dietary_db',
-  user: process.env.DB_USER || 'dietary_user',
-  password: process.env.DB_PASSWORD || 'DietarySecurePass2024!',
-  max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
-});
-
-// CORS configuration
-app.use(cors({
-  origin: true,
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept']
-}));
+const PORT = process.env.PORT || 3001;
 
 // Middleware
+app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(compression());
-app.use(helmet({
-  contentSecurityPolicy: false,
-  crossOriginEmbedderPolicy: false
-}));
-app.use(morgan('combined'));
 
 // Request logging
 app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
   next();
 });
 
-// JWT configuration
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
-
-// Authentication middleware
-const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-
-  if (!token) {
-    return res.status(401).json({ message: 'Access token required' });
-  }
-
-  jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) {
-      console.error('Token verification failed:', err.message);
-      return res.status(403).json({ message: 'Invalid or expired token' });
-    }
-    req.user = user;
-    next();
-  });
-};
-
-// ==================== HEALTH CHECK ====================
+// Health check
 app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'healthy', 
-    timestamp: new Date().toISOString(),
-    database: pool ? 'connected' : 'disconnected'
-  });
+  res.json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
 
-// ==================== AUTH ROUTES ====================
-app.post('/api/auth/login', async (req, res) => {
-  const { username, password } = req.body;
-  console.log('Login attempt for:', username);
-  
-  try {
-    if (username === 'admin' && password === 'admin123') {
-      const token = jwt.sign(
-        { userId: 1, username: 'admin', role: 'Admin', firstName: 'System', lastName: 'Administrator' },
-        JWT_SECRET,
-        { expiresIn: '24h' }
-      );
-      
-      await pool.query(
-        'UPDATE users SET last_login = NOW() WHERE username = $1',
-        [username]
-      ).catch(() => {});
-      
-      return res.json({
-        token,
-        user: {
-          userId: 1,
-          username: 'admin',
-          firstName: 'System',
-          lastName: 'Administrator',
-          role: 'Admin'
-        }
-      });
-    }
-    
-    const result = await pool.query(
-      'SELECT * FROM users WHERE username = $1 AND is_active = true',
-      [username]
-    );
-    
-    if (result.rows.length > 0) {
-      const user = result.rows[0];
-      const isValid = await bcryptjs.compare(password, user.password_hash);
-      
-      if (isValid) {
-        const token = jwt.sign(
-          { 
-            userId: user.user_id, 
-            username: user.username, 
-            role: user.role,
-            firstName: user.first_name,
-            lastName: user.last_name
-          },
-          JWT_SECRET,
-          { expiresIn: '24h' }
-        );
-        
-        await pool.query(
-          'UPDATE users SET last_login = NOW() WHERE user_id = $1',
-          [user.user_id]
-        );
-        
-        return res.json({
-          token,
-          user: {
-            userId: user.user_id,
-            username: user.username,
-            firstName: user.first_name,
-            lastName: user.last_name,
-            role: user.role
-          }
-        });
-      }
-    }
-    
-    res.status(401).json({ message: 'Invalid credentials' });
-  } catch (error) {
-    console.error('Login error:', error);
-    res.status(500).json({ message: 'Login failed' });
-  }
-});
+// Import middleware
+const { authenticateToken } = require('./middleware/auth');
 
-app.get('/api/auth/me', authenticateToken, (req, res) => {
-  res.json({
-    user: {
-      userId: req.user.userId,
-      username: req.user.username,
-      firstName: req.user.firstName || req.user.username,
-      lastName: req.user.lastName || '',
-      role: req.user.role
-    }
-  });
-});
+// API Routes
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/dashboard', authenticateToken, require('./routes/dashboard'));
+app.use('/api/items', authenticateToken, require('./routes/items'));
+app.use('/api/users', authenticateToken, require('./routes/users'));
 
-// ==================== DASHBOARD ====================
-app.get('/api/dashboard', authenticateToken, async (req, res) => {
-  const stats = {
-    totalItems: 0,
-    totalUsers: 0,
-    totalCategories: 0,
-    totalOrders: 0,
-    recentActivity: []
-  };
-  
-  try {
-    const [items, users, categories] = await Promise.all([
-      pool.query('SELECT COUNT(*) FROM items WHERE is_active = true'),
-      pool.query('SELECT COUNT(*) FROM users WHERE is_active = true'),
-      pool.query('SELECT COUNT(DISTINCT category) FROM items')
-    ]);
-    
-    stats.totalItems = parseInt(items.rows[0].count);
-    stats.totalUsers = parseInt(users.rows[0].count);
-    stats.totalCategories = parseInt(categories.rows[0].count);
-  } catch (error) {
-    console.error('Dashboard error:', error);
-  }
-  
-  res.json(stats);
-});
+// Check if routes exist before requiring them
+const fs = require('fs');
 
-// ==================== ITEMS ====================
-app.get('/api/items', authenticateToken, async (req, res) => {
-  try {
-    const result = await pool.query(
-      'SELECT * FROM items WHERE is_active = true ORDER BY category, name'
-    );
-    res.json(result.rows);
-  } catch (error) {
-    console.error('Error fetching items:', error);
-    res.json([]);
-  }
-});
+if (fs.existsSync('./routes/categories.js')) {
+  app.use('/api/categories', authenticateToken, require('./routes/categories'));
+} else {
+  console.log('Categories route not found, skipping...');
+}
 
-app.post('/api/items', authenticateToken, async (req, res) => {
-  const { name, category, calories, sodium_mg, carbs_g, fluid_ml, is_ada_friendly } = req.body;
-  
-  try {
-    const result = await pool.query(
-      `INSERT INTO items (name, category, calories, sodium_mg, carbs_g, fluid_ml, is_ada_friendly, is_active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, true)
-       RETURNING *`,
-      [name, category, calories || 0, sodium_mg || 0, carbs_g || 0, fluid_ml || 0, is_ada_friendly || false]
-    );
-    
-    res.status(201).json(result.rows[0]);
-  } catch (error) {
-    console.error('Error adding item:', error);
-    res.status(500).json({ message: 'Error adding item' });
-  }
-});
+if (fs.existsSync('./routes/tasks.js')) {
+  app.use('/api/tasks', authenticateToken, require('./routes/tasks'));
+} else {
+  console.log('Tasks route not found, skipping...');
+}
 
-app.put('/api/items/:id', authenticateToken, async (req, res) => {
-  const { name, category, calories, sodium_mg, carbs_g, fluid_ml, is_ada_friendly } = req.body;
-  
-  try {
-    const result = await pool.query(
-      `UPDATE items 
-       SET name = $1, category = $2, calories = $3, sodium_mg = $4, carbs_g = $5, 
-           fluid_ml = $6, is_ada_friendly = $7, updated_date = NOW()
-       WHERE item_id = $8 AND is_active = true
-       RETURNING *`,
-      [name, category, calories, sodium_mg, carbs_g, fluid_ml, is_ada_friendly, req.params.id]
-    );
-    
-    if (result.rows.length > 0) {
-      res.json(result.rows[0]);
-    } else {
-      res.status(404).json({ message: 'Item not found' });
-    }
-  } catch (error) {
-    console.error('Error updating item:', error);
-    res.status(500).json({ message: 'Error updating item' });
-  }
-});
+if (fs.existsSync('./routes/logs.js')) {
+  app.use('/api/logs', authenticateToken, require('./routes/logs'));
+} else {
+  console.log('Logs route not found, skipping...');
+}
 
-app.delete('/api/items/:id', authenticateToken, async (req, res) => {
-  try {
-    const result = await pool.query(
-      'UPDATE items SET is_active = false WHERE item_id = $1 RETURNING name',
-      [req.params.id]
-    );
-    
-    if (result.rows.length > 0) {
-      res.json({ message: 'Item deleted successfully' });
-    } else {
-      res.status(404).json({ message: 'Item not found' });
-    }
-  } catch (error) {
-    console.error('Error deleting item:', error);
-    res.status(500).json({ message: 'Error deleting item' });
-  }
-});
-
-// ==================== CATEGORIES ====================
-// Basic categories list
-app.get('/api/items/categories', authenticateToken, async (req, res) => {
-  try {
-    const result = await pool.query(
-      'SELECT DISTINCT category FROM items WHERE category IS NOT NULL ORDER BY category'
-    );
-    const categories = result.rows.map(row => row.category);
-    res.json(categories);
-  } catch (error) {
-    console.error('Error fetching categories:', error);
-    res.json(['Breakfast', 'Lunch', 'Dinner', 'Snacks', 'Beverages', 'Desserts', 'Sides', 'Soups']);
-  }
-});
-
-// Categories with item counts
-app.get('/api/categories/detailed', authenticateToken, async (req, res) => {
-  console.log('GET /api/categories/detailed');
-  try {
-    const result = await pool.query(`
-      SELECT category as name, COUNT(*) as item_count 
-      FROM items 
-      WHERE is_active = true AND category IS NOT NULL
-      GROUP BY category 
-      ORDER BY category
-    `);
-    console.log('Categories with counts:', result.rows);
-    res.json(result.rows);
-  } catch (error) {
-    console.error('Error fetching detailed categories:', error);
-    res.status(500).json({ message: 'Error fetching categories' });
-  }
-});
-
-// Add new category
-app.post('/api/categories', authenticateToken, async (req, res) => {
-  console.log('POST /api/categories:', req.body);
-  const { name } = req.body;
-  
-  if (!name || name.trim() === '') {
-    return res.status(400).json({ message: 'Category name is required' });
-  }
-  
-  try {
-    // Create categories table if needed
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS categories (
-        category_id SERIAL PRIMARY KEY,
-        name VARCHAR(100) UNIQUE NOT NULL,
-        item_count INTEGER DEFAULT 0,
-        created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `).catch(() => {});
-    
-    // Insert category
-    await pool.query(
-      'INSERT INTO categories (name, item_count) VALUES ($1, 0) ON CONFLICT (name) DO NOTHING',
-      [name.trim()]
-    );
-    
-    res.status(201).json({ name: name.trim(), message: 'Category added successfully' });
-  } catch (error) {
-    console.error('Error adding category:', error);
-    res.status(500).json({ message: 'Error adding category' });
-  }
-});
-
-// Delete category
-app.delete('/api/categories/:name', authenticateToken, async (req, res) => {
-  const categoryName = decodeURIComponent(req.params.name);
-  console.log('DELETE /api/categories/' + categoryName);
-  
-  try {
-    // Check if category has items
-    const itemCheck = await pool.query(
-      'SELECT COUNT(*) FROM items WHERE category = $1 AND is_active = true',
-      [categoryName]
-    );
-    
-    const itemCount = parseInt(itemCheck.rows[0].count);
-    if (itemCount > 0) {
-      return res.status(400).json({ 
-        message: `Cannot delete category "${categoryName}" - it has ${itemCount} active items` 
-      });
-    }
-    
-    // Delete category
-    await pool.query('DELETE FROM categories WHERE name = $1', [categoryName]).catch(() => {});
-    
-    res.json({ message: 'Category deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting category:', error);
-    res.status(500).json({ message: 'Error deleting category' });
-  }
-});
-
-// ==================== USERS ====================
-app.get('/api/users', authenticateToken, async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT user_id, username, first_name, last_name, role, is_active, 
-              created_date, last_login
-       FROM users 
-       ORDER BY username`
-    );
-    res.json(result.rows);
-  } catch (error) {
-    console.error('Error fetching users:', error);
-    res.json([]);
-  }
-});
-
-app.post('/api/users', authenticateToken, async (req, res) => {
-  const { username, password, first_name, last_name, role } = req.body;
-  
-  try {
-    const hashedPassword = await bcryptjs.hash(password, 10);
-    
-    const result = await pool.query(
-      `INSERT INTO users (username, password_hash, first_name, last_name, role, is_active)
-       VALUES ($1, $2, $3, $4, $5, true)
-       RETURNING user_id, username, first_name, last_name, role, is_active`,
-      [username, hashedPassword, first_name, last_name, role || 'Viewer']
-    );
-    
-    res.status(201).json(result.rows[0]);
-  } catch (error) {
-    console.error('Error adding user:', error);
-    if (error.code === '23505') {
-      res.status(400).json({ message: 'Username already exists' });
-    } else {
-      res.status(500).json({ message: 'Error adding user' });
-    }
-  }
-});
-
-app.delete('/api/users/:id', authenticateToken, async (req, res) => {
-  try {
-    if (req.params.id === '1') {
-      return res.status(400).json({ message: 'Cannot delete admin user' });
-    }
-    
-    const result = await pool.query(
-      'DELETE FROM users WHERE user_id = $1 RETURNING username',
-      [req.params.id]
-    );
-    
-    if (result.rows.length > 0) {
-      res.json({ message: `User ${result.rows[0].username} permanently deleted` });
-    } else {
-      res.status(404).json({ message: 'User not found' });
-    }
-  } catch (error) {
-    console.error('Error deleting user:', error);
-    res.status(500).json({ message: 'Error deleting user' });
-  }
-});
-
-// ==================== TASKS/DATABASE STATS ====================
-app.get('/api/tasks/database/stats', authenticateToken, async (req, res) => {
-  console.log('GET /api/tasks/database/stats');
-  const stats = {
-    databaseSize: '0 MB',
-    totalTables: 0,
-    totalRecords: 0,
-    lastCheck: new Date().toISOString()
-  };
-  
-  try {
-    // Get database size
-    const sizeResult = await pool.query(
-      "SELECT pg_database_size('dietary_db') as size"
-    );
-    stats.databaseSize = `${(parseInt(sizeResult.rows[0].size) / 1024 / 1024).toFixed(2)} MB`;
-    
-    // Get table count
-    const tableResult = await pool.query(
-      "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public'"
-    );
-    stats.totalTables = parseInt(tableResult.rows[0].count);
-    
-    // Get total records
-    const counts = await Promise.all([
-      pool.query('SELECT COUNT(*) FROM items').catch(() => ({ rows: [{ count: 0 }] })),
-      pool.query('SELECT COUNT(*) FROM users').catch(() => ({ rows: [{ count: 0 }] })),
-      pool.query('SELECT COUNT(*) FROM patients').catch(() => ({ rows: [{ count: 0 }] }))
-    ]);
-    
-    stats.totalRecords = counts.reduce((sum, result) => sum + parseInt(result.rows[0].count || 0), 0);
-    
-    console.log('Database stats:', stats);
-    res.json(stats);
-  } catch (error) {
-    console.error('Error getting database stats:', error);
-    res.json(stats);
-  }
-});
-
-// Database maintenance
-app.post('/api/tasks/database/maintenance', authenticateToken, async (req, res) => {
-  console.log('POST /api/tasks/database/maintenance');
-  const { schedule, day, time } = req.body;
-  
-  try {
-    // Save settings
-    if (schedule) {
-      await pool.query(
-        `INSERT INTO system_settings (setting_key, setting_value) 
-         VALUES ('maintenance_schedule', $1)
-         ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value`,
-        [schedule]
-      );
-    }
-    
-    res.json({ 
-      message: 'Maintenance scheduled successfully',
-      schedule, day, time 
-    });
-  } catch (error) {
-    console.error('Error scheduling maintenance:', error);
-    res.status(500).json({ message: 'Error scheduling maintenance' });
-  }
-});
-
-// Run maintenance now
-app.post('/api/tasks/database/maintenance/run', authenticateToken, async (req, res) => {
-  console.log('POST /api/tasks/database/maintenance/run');
-  try {
-    await pool.query('VACUUM').catch(err => console.log('Vacuum error:', err.message));
-    
-    res.json({ 
-      message: 'Database maintenance completed successfully',
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('Error running maintenance:', error);
-    res.status(500).json({ message: 'Error running maintenance' });
-  }
-});
-
-// Create backup
-app.post('/api/tasks/backup/create', authenticateToken, async (req, res) => {
-  console.log('POST /api/tasks/backup/create');
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  
-  try {
-    await pool.query(
-      `INSERT INTO system_settings (setting_key, setting_value) 
-       VALUES ('last_backup', $1)
-       ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value`,
-      [new Date().toISOString()]
-    );
-    
-    res.json({ 
-      message: 'Backup created successfully',
-      filename: `backup-${timestamp}.sql`,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('Error creating backup:', error);
-    res.status(500).json({ message: 'Error creating backup' });
-  }
-});
-
-// Schedule backup
-app.post('/api/tasks/backup/schedule', authenticateToken, async (req, res) => {
-  console.log('POST /api/tasks/backup/schedule');
-  const { schedule, time } = req.body;
-  
-  try {
-    if (schedule) {
-      await pool.query(
-        `INSERT INTO system_settings (setting_key, setting_value) 
-         VALUES ('backup_schedule', $1)
-         ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value`,
-        [schedule]
-      );
-    }
-    
-    res.json({ 
-      message: 'Backup schedule configured successfully',
-      schedule, time
-    });
-  } catch (error) {
-    console.error('Error scheduling backup:', error);
-    res.status(500).json({ message: 'Error scheduling backup' });
-  }
-});
-
-// Error handler
-app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err);
-  res.status(500).json({ message: 'Internal server error' });
-});
+// Serve static files
+app.use(express.static(path.join(__dirname, 'public')));
 
 // 404 handler
 app.use((req, res) => {
-  console.log('404 - Route not found:', req.method, req.url);
+  console.log(`404: ${req.method} ${req.url}`);
   res.status(404).json({ message: `Route not found: ${req.method} ${req.url}` });
+});
+
+// Error handling
+app.use((err, req, res, next) => {
+  console.error('Error:', err.stack);
+  res.status(err.status || 500).json({
+    message: err.message || 'Internal server error',
+    error: process.env.NODE_ENV === 'development' ? err : {}
+  });
 });
 
 // Start server
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`
-╔═══════════════════════════════════════════╗
-║       DietaryDB Backend Server             ║
-║       Running on port ${PORT}                 ║
-║       All routes loaded successfully       ║
-╚═══════════════════════════════════════════╝
-  `);
-  
-  // Test database connection
-  pool.query('SELECT NOW()', (err, res) => {
-    if (err) {
-      console.error('Database connection failed:', err.message);
-    } else {
-      console.log('Database connected:', res.rows[0].now);
-    }
-  });
+  console.log(`Server running on port ${PORT}`);
+  console.log('Available routes:');
+  console.log('  - /api/auth');
+  console.log('  - /api/dashboard');
+  console.log('  - /api/items');
+  console.log('  - /api/users');
+  if (fs.existsSync('./routes/categories.js')) console.log('  - /api/categories');
+  if (fs.existsSync('./routes/tasks.js')) console.log('  - /api/tasks');
+  if (fs.existsSync('./routes/logs.js')) console.log('  - /api/logs');
 });
 
 module.exports = app;
